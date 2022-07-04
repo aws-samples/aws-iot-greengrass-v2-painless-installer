@@ -1,0 +1,20 @@
+{
+    "AttachedPolicies": [
+        {
+            "PolicyName": "AWSIoTThingsRegistration",
+            "PolicyArn": "arn:aws:iam::aws:policy/service-role/AWSIoTThingsRegistration"
+        },
+        {
+            "PolicyName": "AmazonCognitoReadOnly",
+            "PolicyArn": "arn:aws:iam::aws:policy/AmazonCognitoReadOnly"
+        },
+        {
+            "PolicyName": "AWSLambdaBasicExecutionRole",
+            "PolicyArn": "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        },
+        {
+            "PolicyName": "ggi_dynamo_basic_rw_access_policy",
+            "PolicyArn": "arn:aws:iam::132675061900:policy/ggi_dynamo_basic_rw_access_policy"
+        }
+    ]
+}

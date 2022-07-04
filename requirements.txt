@@ -1,0 +1,3 @@
+# The following must match the versions available in the Lambda Runtime for python 3.9
+boto3 == 1.20.32
+botocore == 1.23.32
