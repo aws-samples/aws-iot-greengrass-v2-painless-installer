@@ -15,6 +15,10 @@
         {
             "PolicyName": "ggi_dynamo_basic_rw_access_policy",
             "PolicyArn": "arn:aws:iam::132675061900:policy/ggi_dynamo_basic_rw_access_policy"
+        },
+        {
+            "PolicyName": "ggi_send_emails_with_ses_policy",
+            "PolicyArn": "arn:aws:iam::132675061900:policy/ggi_send_emails_with_ses_policy"
         }
     ]
 }

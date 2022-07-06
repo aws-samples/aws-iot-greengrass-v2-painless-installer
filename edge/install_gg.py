@@ -45,8 +45,18 @@ class Response(typing.NamedTuple):
         try:
             output = json.loads(self.body)
         except json.JSONDecodeError:
-            output = ""
+            output = str(self.body)
         return output
+
+    def __str__(self):
+
+        return str({
+            'body': self.json(),
+            'status': self.status,
+            'error_count': self.error_count,
+            'headers': str(self.headers),
+        })
+
 
 
 def request(
@@ -112,15 +122,16 @@ def request(
                 headers=httpresponse.headers,
                 status=httpresponse.status,
                 body=httpresponse.read().decode(
-                    httpresponse.headers.get_content_charset("utf-8")
+                    httpresponse.headers.get_content_charset('UTF-8')
                 ),
             )
     except urllib.error.HTTPError as e:
+        body = e.read().decode(e.headers.get_content_charset('UTF-8'))
         response = Response(
-            body=str(e.reason),
             headers=e.headers,
             status=e.code,
             error_count=error_count + 1,
+            body="{}: {}".format(str(e.reason), body),
         )
 
     return response
@@ -167,11 +178,11 @@ def get_app_token(cognito_domain, client_id, client_secret):
         return None
 
 
-def request_provisioning(api_uri, token, serial_number, thing_name):
+def request_provisioning(api_uri, token, serial_number, thing_name, user_name):
     url = "https://{}/request".format(api_uri)
     method = "GET"
     headers = {'Authorization': token}
-    params = {'serialNumber': serial_number, 'thingName': thing_name}
+    params = {'deviceId': serial_number, 'thingName': thing_name, 'userName': user_name}
 
     response = request(
         url=url,
@@ -181,17 +192,20 @@ def request_provisioning(api_uri, token, serial_number, thing_name):
     )
 
     if response.status == 200:
-        return response.json().get('requestId')
+        return response.json()['transactionId']
     else:
+        print("Error when requesting provisioning:")
+        print(response)
         return None
 
 
 if __name__ == "__main__":
+    # TODO: Move tho constants below to command line argument or config file
     CLIENT_ID = "5a1fda99b89mvj5ij3t903to88"
     CLIENT_SECRET = "1joira4ba7nccr9rga4568r6eu469clo37daas8aht0n4adjt9j1"
     API_URI = "zl9kcyhhzd.execute-api.us-east-1.amazonaws.com/Testing"
-    DEVICE_SERIAL = "1234"
-    THING_NAME = "thing"
+    DEVICE_SERIAL = "device02"
+    THING_NAME = "thing02"
     USER_NAME = "lautip"
 
     # Retrieve the Authorization endpoint URI
@@ -217,6 +231,8 @@ if __name__ == "__main__":
         user_name=USER_NAME
     )
     if not request_id:
-        raise (RuntimeError("Provisioning Request was not accepted"))
+        raise (RuntimeError("Provisioning Request was not accepted. Aborting."))
+    else:
+        print("Provisioning Request accepted with ID: {}".format(request_id))
 
     print("Goodbye")

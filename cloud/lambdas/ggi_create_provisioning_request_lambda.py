@@ -60,10 +60,17 @@ logger = logging.getLogger('myLambda')
 logger.setLevel(LOG_LEVEL)
 
 # Cognito Configuration
+# TODO: simplify by detecting automatically when possible
 COG_GRP = os.environ.get("COGNITO_PROV_GROUP", "GreengrassProvisioningOperators")
 COG_POOL = os.environ.get("COGNITO_USER_POOL_ID")
 if not COG_POOL:
     raise Exception("Environment variable COGNITO_USER_POOL_ID missing")
+COG_URL = os.environ.get("COGNITO_URL")
+if not COG_URL:
+    raise Exception("Environment variable COGNITO_URL missing")
+COG_CID = os.environ.get("COG_CLIENT_ID")
+if not COG_CID:
+    raise Exception("Environment variable COG_CLIENT_ID missing")
 
 # DynamoDB configuration
 DDB_TABLE = os.environ.get("DYNAMO_TABLE_NAME")
@@ -72,10 +79,22 @@ if not DDB_TABLE:
 ddbTs = TypeSerializer()
 ddbTd = TypeDeserializer()
 
+# API Gateway configuration
+API_URL = os.environ.get("API_BASE_URL")
+if not API_URL:
+    raise Exception("Environment variable API_ENDPOINT missing")
+OPS_ENDPOINT = "manage/request/"
+
+# SES Configuration
+SES_SENDER = os.environ.get("SES_SENDER_EMAIL")
+if not SES_SENDER:
+    raise Exception("Environment variable SES_SENDER_EMAIL missing")
+
 # Set some boto3 clients
 cog_client = boto3.client('cognito-idp')
 iot_client = boto3.client('iot')
 ddb_client = boto3.client('dynamodb')
+ses_client = boto3.client("ses")
 
 
 def find_confirmed_user_in_group(user_name, users):
@@ -127,10 +146,19 @@ def get_user_email(user):
     return email
 
 
+def ok_200(transactionId):
+    return {
+        'statusCode': 200,
+        'headers': {'Content-Type': "application.json"},
+        'body': json.dumps({'transactionId': transactionId})
+    }
+
+
 def bad_request(msg, status_code=403):
     return {
         'statusCode': status_code,
-        'body': {'reason': json.dumps(msg)}
+        'headers': {'Content-Type': "application.json"},
+        'body': json.dumps({'reason': msg})
     }
 
 
@@ -138,7 +166,8 @@ def internal_error(status_code=500):
     msg = "Something unexpected happened. Try again and contact support if the problem persists."
     return {
         'statusCode': status_code,
-        'body': {'reason': json.dumps(msg)}
+        'headers': {'Content-Type': "application.json"},
+        'body': json.dumps({'reason': msg})
     }
 
 
@@ -221,28 +250,50 @@ class Status(Enum):
 FAILED_XACTIONS = [Status.FAILED, Status.CANCELLED, Status.DENIED]
 
 
-def get_history_from_template(prev_status, action):
-    return {
-        datetime.utcnow().isoformat(): {
-            "action": action,
-            "previous_status": prev_status
-        }
-    }
-
-
-def new_xaction_record(thing_name, device_id, username, email, action, history=None, prev_status=None):
-    if history is None:
-        history = {}
-    if prev_status is None:
-        prev_status = "NONE"
+def new_xaction_record(thing_name, device_id, username, email):
+    now = datetime.utcnow().isoformat()
     return {
         'transactionId': str(uuid4()),
         'deviceId': device_id,
         'thingName': thing_name,
         'currentStatus': Status.PENDING.name,
+        'dateCreated': now,
         'requester': {'username': username, 'email': email},
-        'history': history | get_history_from_template(prev_status, action)
+        'history': {now: {
+            "action": "create",
+            "previous_status": "NONE"
+        }
+        }
     }
+
+
+def send_email(transaction_id, device_id, thing_name, recipient, api_url=API_URL, source=SES_SENDER):
+    auth_url = '{0}/login?client_id={1}&response_type=code'.format(COG_URL, COG_CID)
+    redirect_allow = '&state=action=allow+transactionId={2}&redirect_uri={0}/{1}'.format(api_url, OPS_ENDPOINT,
+                                                                                         transaction_id)
+    redirect_deny = '&state=action=deny+transactionId={2}&redirect_uri={0}/{1}'.format(api_url, OPS_ENDPOINT,
+                                                                                       transaction_id)
+    data = 'The device {0} is requesting to be provisioned on AWS IoT as a Thing named {1}.<br>' \
+           'Please allow or deny this request by clicking on one of the links below (log-in required):<br><br>' \
+           '<a class="ulink" href="{2}{3}" target="_blank">Allow this provisioning request</a>.<br><br>' \
+           '<a class="ulink" href="{2}{4}" target="_blank">Deny this provisioning request</a>.<br>'.format(
+        device_id, thing_name, auth_url, redirect_allow, redirect_deny)
+    body = {
+        'Html': {
+            'Charset': "UTF-8",
+            'Data': data
+        }
+    }
+    subject = {
+        'Charset': "UTF-8",
+        'Data': "Device Provisioning Request for {}".format(device_id)
+    }
+
+    return ses_client.send_email(
+        Destination={'ToAddresses': [recipient]},
+        Message={'Body': body, 'Subject': subject},
+        Source=source
+    )
 
 
 def lambda_handler(event, context):
@@ -283,26 +334,28 @@ def lambda_handler(event, context):
                     "Received new provisioning request for a Thing already in progress: {}".format(thing_name))
                 return bad_request("There is already a Transaction in progress")
 
+        # Write a new transaction in the DB
         xaction = new_xaction_record(thing_name=thing_name,
                                      device_id=device_id,
                                      username=user_name,
-                                     email=email,
-                                     action="create")
-
-        print(xaction)
-        m_xaction = marshall(xaction)
-        print(m_xaction)
-        print(unmarshall(m_xaction))
-
-
+                                     email=email)
+        logger.debug("Writing to DynamoDB: {}".format(xaction))
         resp = ddb_client.put_item(
             TableName=DDB_TABLE,
-            Item=m_xaction,
+            Item=marshall(xaction),
             ReturnConsumedCapacity='NONE',
         )
+        logger.debug("DynamoDB response: {}".format(resp))
 
-        print(resp)
+        # Email the Operator with Allow and Deny links.
+        resp = send_email(transaction_id=xaction['transactionId'],
+                          device_id=device_id,
+                          thing_name=thing_name,
+                          recipient=email)
 
+        logger.debug("Email sending response: {}".format(resp))
+
+        return ok_200(xaction['transactionId'])
 
     except Exception as e:
         logger.error(e)
