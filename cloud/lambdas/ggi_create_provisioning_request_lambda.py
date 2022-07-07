@@ -49,6 +49,7 @@ from boto3.dynamodb.types import TypeSerializer, TypeDeserializer
 from uuid import uuid4
 from enum import Enum
 from datetime import datetime
+import re
 
 # Set the logger and log level
 #  Define a LOG_LEVEL environment variable and give it he desired value
@@ -95,6 +96,12 @@ cog_client = boto3.client('cognito-idp')
 iot_client = boto3.client('iot')
 ddb_client = boto3.client('dynamodb')
 ses_client = boto3.client("ses")
+
+
+def is_valid_thing_name(thing_name):
+    # Check that Thing Name matches IoT Core requirements
+    pattern = "^[0-9a-zA-Z:\-_]*$"
+    return re.fullmatch(pattern=pattern, string=thing_name) is not None
 
 
 def find_confirmed_user_in_group(user_name, users):
@@ -242,9 +249,10 @@ class Status(Enum):
     FAILED = 2
     CANCELLED = 3
     DENIED = 4
-    PROGRESS = 5
-    SUCCESS = 6
-    NONE = 7
+    ALLOWED = 5
+    PROGRESS = 6
+    SUCCESS = 7
+    NONE = 8
 
 
 FAILED_XACTIONS = [Status.FAILED, Status.CANCELLED, Status.DENIED]
@@ -269,15 +277,15 @@ def new_xaction_record(thing_name, device_id, username, email):
 
 def send_email(transaction_id, device_id, thing_name, recipient, api_url=API_URL, source=SES_SENDER):
     auth_url = '{0}/login?client_id={1}&response_type=code'.format(COG_URL, COG_CID)
-    redirect_allow = '&state=action=allow+transactionId={2}&redirect_uri={0}/{1}'.format(api_url, OPS_ENDPOINT,
-                                                                                         transaction_id)
-    redirect_deny = '&state=action=deny+transactionId={2}&redirect_uri={0}/{1}'.format(api_url, OPS_ENDPOINT,
-                                                                                       transaction_id)
+    state_allow = '&state=action=allow+transactionId={0}+deviceId={1}'.format(transaction_id, device_id)
+    state_deny = '&state=action=deny+transactionId={0}+deviceId={1}'.format(transaction_id, device_id)
+    redirect = '&redirect_uri={0}/{1}'.format(api_url, OPS_ENDPOINT)
+
     data = 'The device {0} is requesting to be provisioned on AWS IoT as a Thing named {1}.<br>' \
            'Please allow or deny this request by clicking on one of the links below (log-in required):<br><br>' \
-           '<a class="ulink" href="{2}{3}" target="_blank">Allow this provisioning request</a>.<br><br>' \
-           '<a class="ulink" href="{2}{4}" target="_blank">Deny this provisioning request</a>.<br>'.format(
-        device_id, thing_name, auth_url, redirect_allow, redirect_deny)
+           '<a class="ulink" href="{2}{3}{5}" target="_blank">Allow this provisioning request</a>.<br><br>' \
+           '<a class="ulink" href="{2}{4}{5}" target="_blank">Deny this provisioning request</a>.<br>'.format(
+            device_id, thing_name, auth_url, state_allow, state_deny, redirect)
     body = {
         'Html': {
             'Charset': "UTF-8",
@@ -307,6 +315,10 @@ def lambda_handler(event, context):
         logger.debug("Received query string parameters: userName = '{}', thingName = '{}', "
                      "deviceId = '{}'".format(user_name, thing_name, device_id))
 
+        if is_valid_thing_name(thing_name) is not True:
+            logger.warning("Invalid Thing Name requested: '{}'".format(thing_name))
+            return bad_request("Invalid Thing Name: {}".format(thing_name))
+
         # Check User group membership and retrieve validated email address
         user = get_user_from_group(user_name=user_name)
         if not user:
@@ -320,7 +332,7 @@ def lambda_handler(event, context):
 
         # Check if the Thing Name or the Device ID already exist.
         if is_new_iot_thing(thing_name) is False:
-            return bad_request("A thing with name '{}' already exists".format(thing_name))
+            return bad_request("A thing with name {} already exists".format(thing_name))
         xactions = get_items_by_device_id(device_id=device_id)
         for xaction in xactions:
             if Status[xaction['currentStatus'].upper()] not in FAILED_XACTIONS:
@@ -358,6 +370,6 @@ def lambda_handler(event, context):
         return ok_200(xaction['transactionId'])
 
     except Exception as e:
-        logger.error(e)
+        logger.error("Error during runtime: {}".format(e))
         traceback.print_exc(file=sys.stdout)
         return internal_error()

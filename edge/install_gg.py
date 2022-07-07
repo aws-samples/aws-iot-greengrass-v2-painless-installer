@@ -204,8 +204,8 @@ if __name__ == "__main__":
     CLIENT_ID = "5a1fda99b89mvj5ij3t903to88"
     CLIENT_SECRET = "1joira4ba7nccr9rga4568r6eu469clo37daas8aht0n4adjt9j1"
     API_URI = "zl9kcyhhzd.execute-api.us-east-1.amazonaws.com/Testing"
-    DEVICE_SERIAL = "device02"
-    THING_NAME = "thing02"
+    DEVICE_SERIAL = "device04"
+    THING_NAME = "thing04"
     USER_NAME = "lautip"
 
     # Retrieve the Authorization endpoint URI
