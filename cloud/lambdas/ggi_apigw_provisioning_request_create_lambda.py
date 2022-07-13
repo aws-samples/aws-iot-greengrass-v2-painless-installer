@@ -39,26 +39,18 @@ Configuration:
 
 
 """
-import logging
+# Import the helper functions from the layer
+from ggi_lambda_utils import *
+
+# Other imports
 import sys
 import traceback
 import boto3
 import os
 import json
-from boto3.dynamodb.types import TypeSerializer, TypeDeserializer
 from uuid import uuid4
-from enum import Enum
 from datetime import datetime
-import re
 
-# Set the logger and log level
-#  Define a LOG_LEVEL environment variable and give it he desired value
-LOG_LEVEL = str(os.environ.get("LOG_LEVEL", "WARNING")).upper()
-if LOG_LEVEL not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
-    LOG_LEVEL = "WARNING"
-logging.basicConfig(stream=sys.stdout)
-logger = logging.getLogger('myLambda')
-logger.setLevel(LOG_LEVEL)
 
 # Cognito Configuration
 # TODO: simplify by detecting automatically when possible
@@ -77,8 +69,6 @@ if not COG_CID:
 DDB_TABLE = os.environ.get("DYNAMO_TABLE_NAME")
 if not DDB_TABLE:
     raise Exception("Environment variable DYNAMO_TABLE_NAME missing")
-ddbTs = TypeSerializer()
-ddbTd = TypeDeserializer()
 
 # API Gateway configuration
 API_URL = os.environ.get("API_BASE_URL")
@@ -96,12 +86,6 @@ cog_client = boto3.client('cognito-idp')
 iot_client = boto3.client('iot')
 ddb_client = boto3.client('dynamodb')
 ses_client = boto3.client("ses")
-
-
-def is_valid_thing_name(thing_name):
-    # Check that Thing Name matches IoT Core requirements
-    pattern = "^[0-9a-zA-Z:\-_]*$"
-    return re.fullmatch(pattern=pattern, string=thing_name) is not None
 
 
 def find_confirmed_user_in_group(user_name, users):
@@ -186,32 +170,6 @@ def is_new_iot_thing(thing_name):
         return True
 
 
-def unmarshall(dynamo_obj):
-    """Convert a DynamoDB dict or list into a standard dict or list of dicts."""
-    if isinstance(dynamo_obj, dict):
-        return {k: ddbTd.deserialize(v) for k, v in dynamo_obj.items()}
-    elif isinstance(dynamo_obj, list):
-        l = []
-        for obj in dynamo_obj:
-            l.append(unmarshall(obj))
-        return l
-    else:
-        raise RuntimeError("Failed to unmarshall DynamoDB object: {}".format(dynamo_obj))
-
-
-def marshall(python_obj):
-    """Convert a standard list or dict into a DynamoDB ."""
-    if isinstance(python_obj, dict):
-        return {k: ddbTs.serialize(v) for k, v in python_obj.items()}
-    elif isinstance(python_obj, list):
-        lst = []
-        for obj in python_obj:
-            lst.append(marshall(obj))
-        return {'L': lst}
-    else:
-        raise RuntimeError("Failed to marshall DynamoDB object: {}".format(python_obj))
-
-
 def get_items_by_device_id(device_id, ddb_table_name=DDB_TABLE, index="deviceId-transactionId-index"):
     resp = ddb_client.query(
         TableName=ddb_table_name,
@@ -242,20 +200,6 @@ def get_items_by_thing_name(thing_name, ddb_table_name=DDB_TABLE, index="thingNa
         KeyConditionExpression="thingName = :v1",
     )
     return unmarshall(resp['Items'])
-
-
-class Status(Enum):
-    PENDING = 1
-    FAILED = 2
-    CANCELLED = 3
-    DENIED = 4
-    ALLOWED = 5
-    PROGRESS = 6
-    SUCCESS = 7
-    NONE = 8
-
-
-FAILED_XACTIONS = [Status.FAILED, Status.CANCELLED, Status.DENIED]
 
 
 def new_xaction_record(thing_name, device_id, username, email):

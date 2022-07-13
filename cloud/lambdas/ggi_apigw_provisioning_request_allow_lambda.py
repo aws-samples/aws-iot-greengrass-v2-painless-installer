@@ -14,47 +14,25 @@
 
 """
 """
+# Import the helper functions from the layer
+from ggi_lambda_utils import *
 
-import logging
+# Other imports
 import os
 import sys
-from enum import Enum
 import boto3
-from boto3.dynamodb.types import TypeSerializer, TypeDeserializer
 from uuid import UUID
 import re
 from datetime import datetime
 import traceback
 
-# Set the logger and log level
-#  Define a LOG_LEVEL environment variable and give it he desired value
-LOG_LEVEL = str(os.environ.get("LOG_LEVEL", "WARNING")).upper()
-if LOG_LEVEL not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
-    LOG_LEVEL = "WARNING"
-logging.basicConfig(stream=sys.stdout)
-logger = logging.getLogger('myLambda')
-logger.setLevel(LOG_LEVEL)
-
 # DynamoDB configuration
 DDB_TABLE = os.environ.get("DYNAMO_TABLE_NAME")
 if not DDB_TABLE:
     raise Exception("Environment variable DYNAMO_TABLE_NAME missing")
-ddbTs = TypeSerializer()
-ddbTd = TypeDeserializer()
 
 # Set some boto3 clients
 ddb_client = boto3.client('dynamodb')
-
-
-class Status(Enum):
-    PENDING = 1
-    FAILED = 2
-    CANCELLED = 3
-    DENIED = 4
-    ALLOWED = 5
-    PROGRESS = 6
-    SUCCESS = 7
-    NONE = 8
 
 
 def ok_200(msg):
@@ -114,34 +92,6 @@ def get_authorizer_params(event):
             d[p] = params[p]
     # logger.debug("Authorizer Params: {}".format(d))
     return d
-
-
-def unmarshall(dynamo_obj):
-    """Convert a DynamoDB dict or list into a standard dict or list of dicts."""
-    if dynamo_obj is None:
-        return dynamo_obj
-    elif isinstance(dynamo_obj, dict):
-        return {k: ddbTd.deserialize(v) for k, v in dynamo_obj.items()}
-    elif isinstance(dynamo_obj, list):
-        ll = []
-        for obj in dynamo_obj:
-            ll.append(unmarshall(obj))
-        return ll
-    else:
-        raise RuntimeError("Failed to unmarshall DynamoDB object: {}".format(dynamo_obj))
-
-
-def marshall(python_obj):
-    """Convert a standard list or dict into a DynamoDB ."""
-    if isinstance(python_obj, dict):
-        return {k: ddbTs.serialize(v) for k, v in python_obj.items()}
-    elif isinstance(python_obj, list):
-        lst = []
-        for obj in python_obj:
-            lst.append(marshall(obj))
-        return {'L': lst}
-    else:
-        raise RuntimeError("Failed to marshall DynamoDB object: {}".format(python_obj))
 
 
 def get_ddb_item(pkey, pvalue, skey, svalue, table=DDB_TABLE):

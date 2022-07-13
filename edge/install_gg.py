@@ -26,6 +26,24 @@ import urllib.parse
 import urllib.request
 from email.message import Message
 from base64 import b64encode
+import time
+from enum import Enum
+
+# Constants that are not supposed to be changed for each deployment
+
+API_RESOURCE_REQUEST_CREATE = "/request/create"
+API_RESOURCE_REQUEST_STATUS = "/request/status"
+
+
+class Status(Enum):
+    PENDING = 1
+    FAILED = 2
+    CANCELLED = 3
+    DENIED = 4
+    ALLOWED = 5
+    PROGRESS = 6
+    SUCCESS = 7
+    NONE = 8
 
 
 class Response(typing.NamedTuple):
@@ -179,7 +197,7 @@ def get_app_token(cognito_domain, client_id, client_secret):
 
 
 def request_provisioning(api_uri, token, serial_number, thing_name, user_name):
-    url = "https://{}/request".format(api_uri)
+    url = "https://{}{}".format(api_uri, API_RESOURCE_REQUEST_CREATE)
     method = "GET"
     headers = {'Authorization': token}
     params = {'deviceId': serial_number, 'thingName': thing_name, 'userName': user_name}
@@ -199,14 +217,68 @@ def request_provisioning(api_uri, token, serial_number, thing_name, user_name):
         return None
 
 
+def is_request_allowed(transaction_id, device_id, api_uri, token, poll_period=60, timeout=2700):
+    """
+    This is a blocking function
+    Periodically polls the Provisioning Request status until it is allowed or denied.
+    Times out after the set parameter or if the token expires. 
+    :param str transaction_id: UUID string returned when creating the request
+    :param str device_id:  The deviceId
+    :param str api_uri: The base URI for the API
+    :param str token: The access token for contacting the API
+    :param int poll_period: how frequently to check the status
+    :param int timeout: Time after which the provisioning attempt is aborted
+    :return: True if the request is allowed or False otherwise
+    """
+    timeout_time = time.time() + timeout
+    while True:
+        url = "https://{}{}".format(api_uri, API_RESOURCE_REQUEST_STATUS)
+        method = "GET"
+        headers = {'Authorization': token}
+        params = {'deviceId': device_id, 'transactionId': transaction_id}
+
+        response = request(
+            url=url,
+            params=params,
+            headers=headers,
+            method=method
+        )
+
+        if response.status == 200:
+            status = response.json().get('status')
+            if status == Status.ALLOWED.name:
+                return True
+            elif status != Status.PENDING.name:
+                print("Aborting due to Request Status = {}".format(status))
+                return False
+            else:   # PENDING
+                if time.time() > timeout_time:
+                    print("Aborting due to Status not approved before timeout")
+                    return False
+                else:
+                    print("Request status is {}. Waiting for Request Status to be allowed. "
+                          "Will try again in {} seconds.".format(status, poll_period))
+                    time.sleep(poll_period)
+        elif response.status == 401:  # Unauthorised
+            print("Aborting due to Authentication issue: {}".format(response.body))
+            return False
+        else:
+            print("Aborting due to unexpected error when requesting Request Status:")
+            print(response)
+            return False
+
+
+# TODO: Move tho constants below to command line argument or config file
+# TODO: Consider creating an API endpoint to fetch other config variables
+CLIENT_ID = "5a1fda99b89mvj5ij3t903to88"
+CLIENT_SECRET = "1joira4ba7nccr9rga4568r6eu469clo37daas8aht0n4adjt9j1"
+API_URI = "zl9kcyhhzd.execute-api.us-east-1.amazonaws.com/Testing"
+DEVICE_SERIAL = "device07"
+THING_NAME = "thing07"
+USER_NAME = "lautip"
+
+
 if __name__ == "__main__":
-    # TODO: Move tho constants below to command line argument or config file
-    CLIENT_ID = "5a1fda99b89mvj5ij3t903to88"
-    CLIENT_SECRET = "1joira4ba7nccr9rga4568r6eu469clo37daas8aht0n4adjt9j1"
-    API_URI = "zl9kcyhhzd.execute-api.us-east-1.amazonaws.com/Testing"
-    DEVICE_SERIAL = "device04"
-    THING_NAME = "thing04"
-    USER_NAME = "lautip"
 
     # Retrieve the Authorization endpoint URI
     cognito_domain = get_auth_uri(API_URI)
@@ -234,5 +306,11 @@ if __name__ == "__main__":
         raise (RuntimeError("Provisioning Request was not accepted. Aborting."))
     else:
         print("Provisioning Request accepted with ID: {}".format(request_id))
+
+    # Wait until the Request changes status (human intervention)
+    if not is_request_allowed(transaction_id=request_id, device_id=DEVICE_SERIAL, api_uri=API_URI, token=app_token):
+        raise SystemExit("Provisioning Request not allowed within allowed time window. Aborting.")
+    else:
+        print("Provisioning Request allowed - moving forward...")
 
     print("Goodbye")
