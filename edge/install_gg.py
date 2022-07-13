@@ -28,6 +28,10 @@ from email.message import Message
 from base64 import b64encode
 import time
 from enum import Enum
+import platform
+import subprocess
+import re
+import os
 
 # Constants that are not supposed to be changed for each deployment
 
@@ -75,6 +79,104 @@ class Response(typing.NamedTuple):
             'headers': str(self.headers),
         })
 
+
+def check_requirements():
+    os_type = platform.system()
+    if os_type == "Linux":
+        return check_requirements_linux()
+    elif os_type == "Darwin":
+        # MacOS not compliant to Greengrass requirements. Implemented only for test purposes.
+        return check_requirements_darwin()
+    else:
+        raise NotImplementedError("System detected: {}. Only Linux platforms supported. Aborting.".format(os_type))
+
+
+def get_java_version():
+    try:
+        java_ver = subprocess.check_output(['java', '-version'], stderr=subprocess.STDOUT)
+        match = re.search('(\d+\.\d+).*', java_ver)
+        if match:
+            major, minor = match.group(0).strip('"').split(".")[:2]
+            return int(minor) if int(major) == 1 else int(major)
+        else:
+            return 0
+    except Exception as e:
+        print(e)
+        return 0
+
+
+def get_glibc_version():
+    try:
+        glibc_ver = subprocess.check_output(['ldd', '--version'], stderr=subprocess.STDOUT)
+        match = re.search('(\d+\.\d+).*', glibc_ver)
+        if match:
+            major, minor = match.group(0).strip('"').split(".")[:2]
+            return int(major), int(minor)
+        else:
+            return 0, 0
+    except Exception as e:
+        print(e)
+        return 0, 0
+
+
+def check_sudoers(fname="/etc/sudoers"):
+    try:
+        with open(fname) as f:
+            for line in f.readlines():
+                stripped_line = re.sub("\s\s+", " ", line).strip(" ")
+                if "root ALL=(ALL) ALL" in stripped_line or "root ALL=(ALL:ALL) ALL" in stripped_line:
+                    return True
+        return False
+    except Exception as e:
+        print(e)
+        return False
+
+
+def check_tmp_directory():
+    try:
+        return os.access("/tmp", os.X_OK)
+    except Exception as e:
+        print(e)
+        return False
+
+
+def check_requirements_linux():
+    required = ["ps", "sudo", "sh", "kill", "cp", "chmod", "rm", "ln", "echo", "exit", "id", "uname", "grep",
+                "systemctl", "useradd", "groupadd", "usermod"]
+    java_min = 8
+    glibc_min = (2, 25)  # major, minor
+    result = {}
+    for req in required:
+        if subprocess.call(['which', req], stdout=subprocess.DEVNULL) == 0:
+            result[req] = True
+        else:
+            result[req] = False
+
+    java_ver = get_java_version()
+    if java_ver < java_min:
+        result['java'] = False
+    else:
+        result['java'] = True
+
+    glibc_ver = get_glibc_version()
+    result['glibc'] = glibc_ver[0] > glibc_min[0] or (glibc_ver[0] == glibc_min[0] and glibc_ver[1] >= glibc_min[1])
+
+    # is user root?
+    result['root'] = os.geteuid() == 0
+
+    # Is sudoers correctly set
+    result['sudoers'] = check_sudoers()
+
+    # IS /tmp correctly configured
+    result['tmp directory'] = check_tmp_directory()
+
+    return result
+
+
+def check_requirements_darwin(force=False):
+    # TODO: Fix this
+    return {'one': True, 'two': False}
+    # raise NotImplementedError("MacOS (Darwin) is not supported.")
 
 
 def request(
@@ -251,7 +353,7 @@ def is_request_allowed(transaction_id, device_id, api_uri, token, poll_period=60
             elif status != Status.PENDING.name:
                 print("Aborting due to Request Status = {}".format(status))
                 return False
-            else:   # PENDING
+            else:  # PENDING
                 if time.time() > timeout_time:
                     print("Aborting due to Status not approved before timeout")
                     return False
@@ -277,8 +379,15 @@ DEVICE_SERIAL = "device07"
 THING_NAME = "thing07"
 USER_NAME = "lautip"
 
-
 if __name__ == "__main__":
+
+    # Check if requirements are met
+    reqs = check_requirements()
+    good = all(x for x in reqs.values())
+    if not good:
+        missing = {k: v for (k, v) in reqs.items() if v is False}
+        print("Some requirements are missing :\n{}".format(missing))
+        raise (RuntimeError("Hosting system requirements are not met"))
 
     # Retrieve the Authorization endpoint URI
     cognito_domain = get_auth_uri(API_URI)
