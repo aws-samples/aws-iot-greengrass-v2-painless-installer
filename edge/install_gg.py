@@ -15,7 +15,7 @@
 """
 This script will install AWS IoT Greengrass Version 2 (latest) and provision a new Greengrass Core Device in your
 account. It interacts with Amazon API Gateway and Amazon Cognito running in your account and expects that you have
-deployed the matching AWS CloudFormaion template and created at least one Cognito User allowed to provision devices.
+deployed the matching AWS CloudFormation template and created at least one Cognito User allowed to provision devices.
 See the readme.md documentation for further details.
 """
 
@@ -32,11 +32,18 @@ import platform
 import subprocess
 import re
 import os
+import logging
+import sys
 
 # Constants that are not supposed to be changed for each deployment
 
 API_RESOURCE_REQUEST_CREATE = "/request/create"
 API_RESOURCE_REQUEST_STATUS = "/request/status"
+
+LOG_LEVEL = "DEBUG"
+logging.basicConfig(stream=sys.stdout)
+logger = logging.getLogger('GrenngrassInstaller')
+logger.setLevel(LOG_LEVEL)
 
 
 class Status(Enum):
@@ -48,6 +55,22 @@ class Status(Enum):
     PROGRESS = 6
     SUCCESS = 7
     NONE = 8
+
+
+class ProvisioningException(Exception):
+    pass
+
+
+class AbortProvisioning(Exception):
+    pass
+
+
+class CancelProvisioning(Exception):
+    pass
+
+
+class FailProvisioning(Exception):
+    pass
 
 
 class Response(typing.NamedTuple):
@@ -88,7 +111,7 @@ def check_requirements():
         # MacOS not compliant to Greengrass requirements. Implemented only for test purposes.
         return check_requirements_darwin()
     else:
-        raise NotImplementedError("System detected: {}. Only Linux platforms supported. Aborting.".format(os_type))
+        raise ProvisioningException("System detected: {}. Only Linux platforms supported.".format(os_type))
 
 
 def get_java_version():
@@ -101,7 +124,7 @@ def get_java_version():
         else:
             return 0
     except Exception as e:
-        print(e)
+        logger.critical("Exception when checking JAVA version:\n {}".format(e))
         return 0
 
 
@@ -115,7 +138,7 @@ def get_glibc_version():
         else:
             return 0, 0
     except Exception as e:
-        print(e)
+        logger.critical("Exception when checking glibc version:\n {}".format(e))
         return 0, 0
 
 
@@ -128,7 +151,7 @@ def check_sudoers(fname="/etc/sudoers"):
                     return True
         return False
     except Exception as e:
-        print(e)
+        logger.critical("Exception when checking sudoers configuration:\n {}".format(e))
         return False
 
 
@@ -136,7 +159,7 @@ def check_tmp_directory():
     try:
         return os.access("/tmp", os.X_OK)
     except Exception as e:
-        print(e)
+        logger.critical("Exception when checking /tmp directory configuration:\n {}".format(e))
         return False
 
 
@@ -173,10 +196,10 @@ def check_requirements_linux():
     return result
 
 
-def check_requirements_darwin(force=False):
+def check_requirements_darwin():
     # TODO: Fix this
-    return {'one': True, 'two': False}
-    # raise NotImplementedError("MacOS (Darwin) is not supported.")
+    return {'one': True, 'two': True}
+    # raise ProvisioningException("MacOS (Darwin) is not supported.")
 
 
 def request(
@@ -231,10 +254,10 @@ def request(
         url, data=request_data, headers=headers, method=method
     )
 
-    # print("url: {}".format(url))
-    # print("data: {}".format(data))
-    # print("headers: {}".format(headers))
-    # print("method: {}".format(method))
+    # logger.debug("url: {}".format(url))
+    # logger.debug("data: {}".format(data))
+    # logger.debug("headers: {}".format(headers))
+    # logger.debug("method: {}".format(method))
 
     try:
         with urllib.request.urlopen(httprequest) as httpresponse:
@@ -314,9 +337,13 @@ def request_provisioning(api_uri, token, serial_number, thing_name, user_name):
     if response.status == 200:
         return response.json()['transactionId']
     else:
-        print("Error when requesting provisioning:")
-        print(response)
+        logger.critical("Error when requesting provisioning:")
+        logger.critical(response)
         return None
+
+
+def update_provisioning_request_status(request_id, thing_name, new_status):
+    raise NotImplementedError("update_provisioning_request_status")
 
 
 def is_request_allowed(transaction_id, device_id, api_uri, token, poll_period=60, timeout=2700):
@@ -351,22 +378,22 @@ def is_request_allowed(transaction_id, device_id, api_uri, token, poll_period=60
             if status == Status.ALLOWED.name:
                 return True
             elif status != Status.PENDING.name:
-                print("Aborting due to Request Status = {}".format(status))
+                logger.critical("Aborting due to Request Status = {}".format(status))
                 return False
             else:  # PENDING
                 if time.time() > timeout_time:
-                    print("Aborting due to Status not approved before timeout")
+                    logger.critical("Aborting due to Status not approved before timeout")
                     return False
                 else:
-                    print("Request status is {}. Waiting for Request Status to be allowed. "
-                          "Will try again in {} seconds.".format(status, poll_period))
+                    logger.info("Request status is {}. Waiting for Request Status to be allowed. "
+                                "Will try again in {} seconds.".format(status, poll_period))
                     time.sleep(poll_period)
         elif response.status == 401:  # Unauthorised
-            print("Aborting due to Authentication issue: {}".format(response.body))
+            logger.critical("Aborting due to Authentication issue: {}".format(response.body))
             return False
         else:
-            print("Aborting due to unexpected error when requesting Request Status:")
-            print(response)
+            logger.critical("Aborting due to unexpected error when requesting Request Status:")
+            logger.critical(response)
             return False
 
 
@@ -375,51 +402,93 @@ def is_request_allowed(transaction_id, device_id, api_uri, token, poll_period=60
 CLIENT_ID = "5a1fda99b89mvj5ij3t903to88"
 CLIENT_SECRET = "1joira4ba7nccr9rga4568r6eu469clo37daas8aht0n4adjt9j1"
 API_URI = "zl9kcyhhzd.execute-api.us-east-1.amazonaws.com/Testing"
-DEVICE_SERIAL = "device07"
-THING_NAME = "thing07"
+DEVICE_SERIAL = "device09"
+THING_NAME = "thing09"
 USER_NAME = "lautip"
 
 if __name__ == "__main__":
+    try:
+        # Check if requirements are met
+        try:
+            reqs = check_requirements()
+        except ProvisioningException as e:
+            raise AbortProvisioning(e)
+        good = all(x for x in reqs.values())
+        if not good:
+            missing = {k: v for (k, v) in reqs.items() if v is False}
+            logger.critical("Some requirements are missing :\n{}".format(missing))
+            raise AbortProvisioning("Hosting system requirements are not met.")
 
-    # Check if requirements are met
-    reqs = check_requirements()
-    good = all(x for x in reqs.values())
-    if not good:
-        missing = {k: v for (k, v) in reqs.items() if v is False}
-        print("Some requirements are missing :\n{}".format(missing))
-        raise (RuntimeError("Hosting system requirements are not met"))
+        # Retrieve the Authorization endpoint URI
+        cognito_domain = get_auth_uri(API_URI)
+        if not cognito_domain:
+            raise AbortProvisioning("Cognito Domain could not be retrieved")
 
-    # Retrieve the Authorization endpoint URI
-    cognito_domain = get_auth_uri(API_URI)
-    if not cognito_domain:
-        raise (RuntimeError("Cognito Domain could not be retrieved"))
+        # Get a time-limited Application Token
+        app_token = get_app_token(
+            cognito_domain=cognito_domain,
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET
+        )
+        if not app_token:
+            raise AbortProvisioning("Application Token could not be obtained")
 
-    # Get a time-limited Application Token
-    app_token = get_app_token(
-        cognito_domain=cognito_domain,
-        client_id=CLIENT_ID,
-        client_secret=CLIENT_SECRET
-    )
-    if not app_token:
-        raise (RuntimeError("Application Token could not be obtained"))
+        # Send a request to provision the device and store the response elements
+        request_id = request_provisioning(
+            api_uri=API_URI,
+            token=app_token,
+            serial_number=DEVICE_SERIAL,
+            thing_name=THING_NAME,
+            user_name=USER_NAME
+        )
+        if not request_id:
+            raise AbortProvisioning("Provisioning Request was not accepted.")
+        else:
+            logger.info("Provisioning Request accepted with ID: {}".format(request_id))
 
-    # Send a request to provision the device and store the response elements
-    request_id = request_provisioning(
-        api_uri=API_URI,
-        token=app_token,
-        serial_number=DEVICE_SERIAL,
-        thing_name=THING_NAME,
-        user_name=USER_NAME
-    )
-    if not request_id:
-        raise (RuntimeError("Provisioning Request was not accepted. Aborting."))
-    else:
-        print("Provisioning Request accepted with ID: {}".format(request_id))
+        # Wait until the Request changes status (human intervention)
+        if not is_request_allowed(transaction_id=request_id, device_id=DEVICE_SERIAL, api_uri=API_URI, token=app_token):
+            raise CancelProvisioning("Provisioning Request not allowed within allowed time window.")
+        else:
+            logger.info("Provisioning Request allowed - moving forward...")
 
-    # Wait until the Request changes status (human intervention)
-    if not is_request_allowed(transaction_id=request_id, device_id=DEVICE_SERIAL, api_uri=API_URI, token=app_token):
-        raise SystemExit("Provisioning Request not allowed within allowed time window. Aborting.")
-    else:
-        print("Provisioning Request allowed - moving forward...")
+        # Change status to in progress
+        update_provisioning_request_status(request_id=request_id,
+                                           thing_name=THING_NAME,
+                                           new_status=Status.PROGRESS.name)
+        # Download Greengrass package and extract it
 
-    print("Goodbye")
+        # Request Iot Think provisioning
+
+        # Install Greengrass Core
+
+        # Update Status to SUCCESS
+
+        logger.info("Goodbye")
+
+    except FailProvisioning as e:
+        if 'request_id' in locals():
+            logger.critical("Provisioning process failed. Chancing State to Failed:\n{}".format(e))
+            update_provisioning_request_status(request_id=request_id,
+                                               thing_name=THING_NAME,
+                                               new_status=Status.FAILED.name)
+        else:
+            logger.critical("Process aborted due to Exception but cloud not Cancel the request\n {}".format(e))
+
+        sys.exit(1)
+
+    except CancelProvisioning as e:
+        if 'request_id' in locals():
+            logger.critical(
+                "Aborting Provisioning Request due to Exception. Chancing State to Cancelled:\n{}".format(e))
+            update_provisioning_request_status(request_id=request_id,
+                                               thing_name=THING_NAME,
+                                               new_status=Status.CANCELLED.name)
+        else:
+            logger.critical("Process aborted due to Exception but cloud change its state to Cancelled:\n {}".format(e))
+
+        sys.exit(1)
+
+    except AbortProvisioning as e:
+        logger.critical("Process aborted due to Exception. State has not been updated:\n {}".format(e))
+        sys.exit(1)

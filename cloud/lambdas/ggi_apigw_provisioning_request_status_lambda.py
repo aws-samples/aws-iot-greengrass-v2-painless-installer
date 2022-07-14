@@ -30,24 +30,6 @@ if not DDB_TABLE:
 ddb_client = boto3.client('dynamodb')
 
 
-def get_ddb_item(pkey, pvalue, skey, svalue, table=DDB_TABLE):
-    try:
-        response = ddb_client.get_item(
-            Key=marshall({pkey: pvalue, skey: svalue}),
-            TableName=table,
-            ReturnConsumedCapacity='NONE',
-        )
-        return unmarshall(response.get('Item'))
-    except ddb_client.exceptions.ResourceNotFoundException as e:
-        logger.warning("An edge device tried to access non-existing Provisioning Request:"
-                       "pkey: {}, skey: {}".format(pvalue, svalue))
-        return None
-    except Exception as e:
-        logger.error(e)
-        traceback.print_exc(file=sys.stdout)
-        return internal_error()
-
-
 def ok_200(status):
     return {
         'statusCode': 200,
@@ -77,7 +59,8 @@ def lambda_handler(event, context):
     try:
         parameters = event['queryStringParameters']
         item = get_ddb_item(pkey='transactionId', pvalue=parameters['transactionId'],
-                            skey='deviceId', svalue=parameters['deviceId'])
+                            skey='deviceId', svalue=parameters['deviceId'],
+                            table=DDB_TABLE, ddb_client=ddb_client)
         if not item:
             return bad_request(msg="The provisioning request was not found.")
         else:

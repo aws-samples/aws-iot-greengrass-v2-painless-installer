@@ -23,7 +23,6 @@ import sys
 import boto3
 from uuid import UUID
 import re
-from datetime import datetime
 import traceback
 
 # DynamoDB configuration
@@ -94,15 +93,6 @@ def get_authorizer_params(event):
     return d
 
 
-def get_ddb_item(pkey, pvalue, skey, svalue, table=DDB_TABLE):
-    response = ddb_client.get_item(
-        Key=marshall({pkey: pvalue, skey: svalue}),
-        TableName=table,
-        ReturnConsumedCapacity='NONE',
-    )
-    return unmarshall(response.get('Item'))
-
-
 def is_valid_state_params(params):
     """
     State parameters are passed as Query String Parameters and could have been altered
@@ -136,28 +126,6 @@ def is_same_requester(request, username, email):
     return request['requester']['email'] == email and request['requester']['username'] == username
 
 
-def update_request_status(current_request, action, new_status, table=DDB_TABLE):
-    history = current_request['history']
-    history[datetime.utcnow().isoformat()] = {'action': action,
-                                              'previous_status': str(current_request['currentStatus'])}
-    attribute_value = {':cs': new_status,
-                       ':h': history}
-    key = {'deviceId': current_request['deviceId'],
-           'transactionId': current_request['transactionId']}
-    response = ddb_client.update_item(
-        ExpressionAttributeNames={
-            '#CS': 'currentStatus',
-            '#H': 'history',
-        },
-        ExpressionAttributeValues=marshall(attribute_value),
-        Key=marshall(key),
-        ReturnValues='ALL_NEW',
-        TableName=table,
-        UpdateExpression='SET #CS = :cs, #H = :h'
-    )
-    logger.debug("New DB values after update: \n{}".format(response))
-
-
 def lambda_handler(event, context):
     try:
         # logger.debug("Event: {}".format(event))
@@ -171,7 +139,8 @@ def lambda_handler(event, context):
 
         # Retrieve the request from the DB
         prov_req = get_ddb_item(pkey='transactionId', pvalue=parameters['transactionId'],
-                                skey='deviceId', svalue=parameters['deviceId'])
+                                skey='deviceId', svalue=parameters['deviceId'],
+                                table=DDB_TABLE, ddb_client=ddb_client)
         logger.debug("Record found in the DB: {}".format(prov_req))
         if not prov_req:
             msg = "A provisioning request with TransactionId '{}' " \
@@ -191,7 +160,11 @@ def lambda_handler(event, context):
             return bad_request_400("Operation not allowed. See logs for details.")
         # Update the record in the DB
         new_status = Status.ALLOWED if parameters['action'] == "allow" else Status.DENIED
-        update_request_status(current_request=prov_req, new_status=new_status.name, action=parameters['action'])
+        update_request_status(current_request=prov_req,
+                              new_status=new_status.name,
+                              action=parameters['action'],
+                              table = DDB_TABLE,
+                              ddb_client=ddb_client)
         # Finally, send response to the User
         return ok_200("The provisioning request with TransactionId '{}' "
                       "and deviceId '{}' has been <b>{}</b>.".format(parameters['transactionId'],

@@ -26,6 +26,8 @@ import urllib.request
 from email.message import Message
 from boto3.dynamodb.types import TypeSerializer, TypeDeserializer
 import re
+from datetime import datetime
+
 
 # Set the logger and log level
 #  Define a LOG_LEVEL environment variable and give it he desired value
@@ -189,9 +191,44 @@ def marshall(python_obj):
     else:
         raise RuntimeError("Failed to marshall DynamoDB object: {}".format(python_obj))
 
+
 def is_valid_thing_name(thing_name):
     # Check that Thing Name matches IoT Core requirements
     pattern = "^[0-9a-zA-Z:\-_]*$"
     return re.fullmatch(pattern=pattern, string=thing_name) is not None
 
 
+def update_request_status(current_request, action, new_status, table, ddb_client):
+    history = current_request['history']
+    history[datetime.utcnow().isoformat()] = {'action': action,
+                                              'previous_status': str(current_request['currentStatus'])}
+    attribute_value = {':cs': new_status,
+                       ':h': history}
+    key = {'deviceId': current_request['deviceId'],
+           'transactionId': current_request['transactionId']}
+    response = ddb_client.update_item(
+        ExpressionAttributeNames={
+            '#CS': 'currentStatus',
+            '#H': 'history',
+        },
+        ExpressionAttributeValues=marshall(attribute_value),
+        Key=marshall(key),
+        ReturnValues='ALL_NEW',
+        TableName=table,
+        UpdateExpression='SET #CS = :cs, #H = :h'
+    )
+    logger.debug("New DB values after update: \n{}".format(response))
+
+
+def get_ddb_item(pkey, pvalue, skey, svalue, table, ddb_client):
+    try:
+        response = ddb_client.get_item(
+            Key=marshall({pkey: pvalue, skey: svalue}),
+            TableName=table,
+            ReturnConsumedCapacity='NONE',
+        )
+        return unmarshall(response.get('Item'))
+    except ddb_client.exceptions.ResourceNotFoundException:
+        logger.warning("An edge device tried to access non-existing Provisioning Request:"
+                       "pkey: {}, skey: {}".format(pvalue, svalue))
+        return None
