@@ -34,11 +34,17 @@ import re
 import os
 import logging
 import sys
+from zipfile import ZipFile
 
 # Constants that are not supposed to be changed for each deployment
 
 API_RESOURCE_REQUEST_CREATE = "/request/create"
 API_RESOURCE_REQUEST_STATUS = "/request/status"
+API_RESOURCE_REQUEST_UPDATE = "/request/update"
+URL_GREENGRASS_NUCLEUS_DL = "https://d2s8p88vqu9w66.cloudfront.net/releases/greengrass-nucleus-latest.zip"
+GG_ZIP_DEST_DIR = "/tmp"
+GG_ZIP_DEST_FILE = "greengrass-nucleus.zip"
+GG_UNZIP_DEST_DIR = "/tmp/GreengrassInstaller"
 
 LOG_LEVEL = "DEBUG"
 logging.basicConfig(stream=sys.stdout)
@@ -342,8 +348,25 @@ def request_provisioning(api_uri, token, serial_number, thing_name, user_name):
         return None
 
 
-def update_provisioning_request_status(request_id, thing_name, new_status):
-    raise NotImplementedError("update_provisioning_request_status")
+def update_provisioning_request_status(token, api_uri, transaction_id, device_id, new_status):
+    url = "https://{}{}".format(api_uri, API_RESOURCE_REQUEST_UPDATE)
+    method = "GET"
+    headers = {'Authorization': token}
+    params = {'transactionId': transaction_id, 'deviceId': device_id, 'newStatus': new_status}
+
+    response = request(
+        url=url,
+        params=params,
+        headers=headers,
+        method=method
+    )
+
+    if response.status == 200:
+        return response.json()['status']
+    else:
+        logger.critical("Error when requesting provisioning:")
+        logger.critical(response)
+        return None
 
 
 def is_request_allowed(transaction_id, device_id, api_uri, token, poll_period=60, timeout=2700):
@@ -395,6 +418,22 @@ def is_request_allowed(transaction_id, device_id, api_uri, token, poll_period=60
             logger.critical("Aborting due to unexpected error when requesting Request Status:")
             logger.critical(response)
             return False
+
+
+def get_gg_installer(url=URL_GREENGRASS_NUCLEUS_DL, zip_dest=GG_ZIP_DEST_DIR,
+                     zip_filename=GG_ZIP_DEST_FILE, unzip_dir=GG_UNZIP_DEST_DIR):
+    try:
+        zip_dest = os.path.abspath(zip_dest)
+        logger.debug("Creating directory: {}".format(zip_dest))
+        os.makedirs(name=zip_dest, mode=0o700, exist_ok=True)
+        dest_zip_path = os.path.join(zip_dest, zip_filename)
+        urllib.request.urlretrieve(url=url, filename=dest_zip_path)
+        with ZipFile(dest_zip_path, 'r') as zipf:
+            zipf.extractall(unzip_dir)
+
+    except Exception as e:
+        logger.critical("Could not get greengrass installer:\n{}".format(e))
+        raise
 
 
 # TODO: Move tho constants below to command line argument or config file
@@ -453,11 +492,19 @@ if __name__ == "__main__":
             logger.info("Provisioning Request allowed - moving forward...")
 
         # Change status to in progress
-        update_provisioning_request_status(request_id=request_id,
-                                           thing_name=THING_NAME,
-                                           new_status=Status.PROGRESS.name)
+        new_status = Status.PROGRESS
+        resp_status = update_provisioning_request_status(token=app_token,
+                                                         api_uri=API_URI,
+                                                         transaction_id=request_id,
+                                                         device_id=DEVICE_SERIAL,
+                                                         new_status=new_status.name)
+        if new_status.name != resp_status:
+            raise FailProvisioning("Status could not be updated to {}.".format(new_status.name))
         # Download Greengrass package and extract it
-
+        try:
+            get_gg_installer()
+        except Exception:
+            raise FailProvisioning("Could not get Greengrass Installer. Provisioning Failed.")
         # Request Iot Think provisioning
 
         # Install Greengrass Core
@@ -467,10 +514,12 @@ if __name__ == "__main__":
         logger.info("Goodbye")
 
     except FailProvisioning as e:
-        if 'request_id' in locals():
-            logger.critical("Provisioning process failed. Chancing State to Failed:\n{}".format(e))
-            update_provisioning_request_status(request_id=request_id,
-                                               thing_name=THING_NAME,
+        if 'request_id' in locals() and 'app_token' in locals():
+            logger.critical("Provisioning process failed. Changing State to Failed:\n{}".format(e))
+            update_provisioning_request_status(token=app_token,
+                                               api_uri=API_URI,
+                                               transaction_id=request_id,
+                                               device_id=DEVICE_SERIAL,
                                                new_status=Status.FAILED.name)
         else:
             logger.critical("Process aborted due to Exception but cloud not Cancel the request\n {}".format(e))
@@ -478,11 +527,13 @@ if __name__ == "__main__":
         sys.exit(1)
 
     except CancelProvisioning as e:
-        if 'request_id' in locals():
+        if 'request_id' in locals() and 'app_token' in locals():
             logger.critical(
                 "Aborting Provisioning Request due to Exception. Chancing State to Cancelled:\n{}".format(e))
-            update_provisioning_request_status(request_id=request_id,
-                                               thing_name=THING_NAME,
+            update_provisioning_request_status(token=app_token,
+                                               api_uri=API_URI,
+                                               transaction_id=request_id,
+                                               device_id=DEVICE_SERIAL,
                                                new_status=Status.CANCELLED.name)
         else:
             logger.critical("Process aborted due to Exception but cloud change its state to Cancelled:\n {}".format(e))
