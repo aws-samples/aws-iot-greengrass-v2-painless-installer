@@ -1,0 +1,42 @@
+{
+    "Parameters" : {
+        "ThingName" : {
+            "Type" : "String"
+        },
+        "deviceId" : {
+            "Type" : "String"
+        },
+        "CSR" : {
+            "Type" : "String"
+        }
+    },
+    "Resources" : {
+        "thing" : {
+            "Type" : "AWS::IoT::Thing",
+            "Properties" : {
+                "ThingName" : {"Ref" : "ThingName"},
+                "AttributePayload" : { "deviceId" :  {"Ref" : "deviceId"}},
+                "ThingTypeName" :  "ggi_GreengrassV2CoreDeviceType",
+                "ThingGroups" : ["ggi_GreengrassV2CoreDevices"]
+            },
+            "OverrideSettings" : {
+                "AttributePayload" : "FAIL",
+                "ThingTypeName" : "FAIL",
+                "ThingGroups" : "FAIL"
+            }
+        },
+        "certificate" : {
+            "Type" : "AWS::IoT::Certificate",
+            "Properties" : {
+                "CertificateSigningRequest": {"Ref" : "CSR"},
+                "Status" : "ACTIVE"
+            }
+        },
+        "policy" : {
+            "Type" : "AWS::IoT::Policy",
+            "Properties" : {
+                "PolicyName" : "ggi_GreengrassV2CoreTokenExchangeRoleAliasPolicy"
+            }
+        }
+    }
+}

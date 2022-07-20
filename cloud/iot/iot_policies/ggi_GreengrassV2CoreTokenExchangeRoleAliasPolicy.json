@@ -1,0 +1,10 @@
+{
+  "Version":"2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "iot:AssumeRoleWithCertificate",
+      "Resource": "arn:aws:iot:us-east-1:132675061900:rolealias/ggi_GreengrassCoreTokenExchangeRoleAlias"
+    }
+  ]
+}

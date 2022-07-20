@@ -1,0 +1,4 @@
+## Allow root to run any commands anywhere
+root    ALL=(ALL)       ALL
+
+# Hello world
