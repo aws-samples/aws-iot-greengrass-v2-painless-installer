@@ -36,17 +36,32 @@ import logging
 import sys
 from zipfile import ZipFile
 
-# Constants that are not supposed to be changed for each deployment
+# Change those constants according to your preferences
+
+# SSL Key and CSR Distinguished Names elements
+SSL_CN = "Greengrass Installer"
+SSL_OU = "Amazon Web Services"
+SSL_O = "Amazon.com Inc."
+SSL_L = "Seattle"
+SSL_ST = "Washington"
+SSL_C = "US"
+
+LOG_LEVEL = "DEBUG"
+
+# Constants that are not supposed to be changed
 
 API_RESOURCE_REQUEST_CREATE = "/request/create"
 API_RESOURCE_REQUEST_STATUS = "/request/status"
 API_RESOURCE_REQUEST_UPDATE = "/request/update"
+API_RESOURCE_REGISTER_THING = "/provision/register-thing"
 URL_GREENGRASS_NUCLEUS_DL = "https://d2s8p88vqu9w66.cloudfront.net/releases/greengrass-nucleus-latest.zip"
 GG_ZIP_DEST_DIR = "/tmp"
 GG_ZIP_DEST_FILE = "greengrass-nucleus.zip"
 GG_UNZIP_DEST_DIR = "/tmp/GreengrassInstaller"
+GG_SECRETS_DIR = "/greengrass-v2-certs"
+AMAZON_ROOT_CA_URL = "https://www.amazontrust.com/repository/AmazonRootCA1.pem"
 
-LOG_LEVEL = "DEBUG"
+# Logger setup
 logging.basicConfig(stream=sys.stdout)
 logger = logging.getLogger('GrenngrassInstaller')
 logger.setLevel(LOG_LEVEL)
@@ -171,7 +186,7 @@ def check_tmp_directory():
 
 def check_requirements_linux():
     required = ["ps", "sudo", "sh", "kill", "cp", "chmod", "rm", "ln", "echo", "exit", "id", "uname", "grep",
-                "systemctl", "useradd", "groupadd", "usermod"]
+                "systemctl", "useradd", "groupadd", "usermod", "openssl"]
     java_min = 8
     glibc_min = (2, 25)  # major, minor
     result = {}
@@ -436,6 +451,117 @@ def get_gg_installer(url=URL_GREENGRASS_NUCLEUS_DL, zip_dest=GG_ZIP_DEST_DIR,
         raise
 
 
+class SslCreds(object):
+    CN = SSL_CN
+    OU = SSL_OU
+    O = SSL_O
+    L = SSL_L
+    ST = SSL_ST
+    C = SSL_C
+    __SUPPORTED_OS = ['Linux', 'Darwin']
+    AMZ_CA_URL = AMAZON_ROOT_CA_URL
+    AMZ_CA_NAME = "AmazonRootCA1.pem"
+
+    def __init__(self, dest_directory, base_name):
+        self.os_type = platform.system()
+        if self.os_type not in self.__SUPPORTED_OS:
+            self._unsupported_os()
+        self.dest_dir = os.path.abspath(dest_directory)
+        self.base_name = base_name
+        self.key_path = os.path.join(self.dest_dir, self.base_name + ".key")
+        self.csr_path = os.path.join(self.dest_dir, self.base_name + ".csr")
+        self.crt_path = os.path.join(self.dest_dir, self.base_name + ".crt")
+        self.ca_path = os.path.join(self.dest_dir, self.AMZ_CA_NAME)
+
+    def _get_dn_string(self):
+        return "/CN={}/OU={}/O={}/L={}/ST={}/C={}".format(self.CN, self.OU, self.O, self.L, self.ST, self.C)
+
+    def create_private_key_and_csr(self):
+        '''
+        Also download teh Amazon Root CA
+        :return:
+        '''
+        if self.os_type not in self.__SUPPORTED_OS:
+            self._unsupported_os()
+
+        if self.os_type in ['Linux', 'Darwin']:
+            self._create_private_key_and_csr_linux()
+        self.get_amazon_root_ca()
+
+    def get_amazon_root_ca(self):
+        if not os.path.isfile(self.ca_path):
+            urllib.request.urlretrieve(url=self.AMZ_CA_URL, filename=self.ca_path)
+            os.chmod(path=self.csr_path, mode=0o400)
+
+    def get_csr(self):
+        if not os.path.isfile(self.csr_path):
+            return None
+        with open(self.csr_path, 'r') as f:
+            return f.read()
+
+    def _create_private_key_and_csr_linux(self):
+        try:
+            logger.debug("Creating directory: {}".format(self.dest_dir))
+            os.makedirs(name=self.dest_dir, mode=0o700, exist_ok=True)
+            # Generate the key
+            subprocess.call(['openssl', 'genrsa', '-out', self.key_path, '4096'])
+            os.chmod(path=self.key_path, mode=0o400)
+            # Generate CSR
+            subprocess.call(
+                ['openssl', 'req', '-new', '-key', self.key_path, '-out', self.csr_path,
+                 '-subj', self._get_dn_string()])
+            os.chmod(path=self.csr_path, mode=0o400)
+        except Exception as e:
+            logger.critical("Error when creating the key or csr:\n {}".format(e))
+            raise
+
+    def _unsupported_os(self):
+        raise ProvisioningException("System detected: {}. Only Linux platforms supported.".format(self.os_type))
+
+    def save_crt(self, crt):
+        '''
+        Removes the file is crt is None
+        :param crt:
+        :return: Nothing
+        '''
+        if os.path.isfile(self.crt_path):
+            os.chmod(path=self.crt_path, mode=0o600)
+            os.remove(self.crt_path)
+        if crt is not None:
+            with open(self.crt_path, "w") as f:
+                f.write(crt)
+            os.chmod(path=self.crt_path, mode=0o400)
+
+
+def provision_thing(device_id, transaction_id, csr, token, api_uri):
+    url = "https://{}{}".format(api_uri, API_RESOURCE_REGISTER_THING)
+    method = "POST"
+    headers = {'Content-Type': "application/json", 'Authorization': token}
+    params = None
+    data_as_json = True
+    data = {
+        'CSR': csr,
+        'deviceId': device_id,
+        'transactionId': transaction_id
+    }
+
+    response = request(
+        url=url,
+        data=data,
+        params=params,
+        headers=headers,
+        method=method,
+        data_as_json=data_as_json
+    )
+
+    if response.status == 200:
+        return response.json()
+    else:
+        logger.critical("Error when registering Thing:")
+        logger.critical(response)
+        return None
+
+
 # TODO: Move tho constants below to command line argument or config file
 # TODO: Consider creating an API endpoint to fetch other config variables
 CLIENT_ID = "5a1fda99b89mvj5ij3t903to88"
@@ -505,7 +631,29 @@ if __name__ == "__main__":
             get_gg_installer()
         except Exception:
             raise FailProvisioning("Could not get Greengrass Installer. Provisioning Failed.")
-        # Request Iot Think provisioning
+        # Create SLL Credentials
+        try:
+            creds = SslCreds(
+                dest_directory=GG_SECRETS_DIR,
+                base_name="greengrassV2"
+            )
+            creds.create_private_key_and_csr()
+            csr = creds.get_csr()
+        except Exception:
+            raise FailProvisioning("Could not create Key and CSR. PRovisioning Failed.")
+        # Request Thing Provisioning from CSR
+        response = provision_thing(device_id=DEVICE_SERIAL,
+                                   transaction_id=request_id,
+                                   csr=csr,
+                                   token=app_token,
+                                   api_uri=API_URI,
+                                   )
+        if not response:
+            raise FailProvisioning("Registering IoT Thing Failed.")
+        crt = response.get('certificatePem')
+        if crt is None or response['thingName'] != THING_NAME or response['deviceId'] != DEVICE_SERIAL:
+            raise FailProvisioning("Mismatching data or missing CRT:\n{}".format(response))
+        creds.save_crt(crt)
 
         # Install Greengrass Core
 

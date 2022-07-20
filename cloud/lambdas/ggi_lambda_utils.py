@@ -38,7 +38,7 @@ logging.basicConfig(stream=sys.stdout)
 logger = logging.getLogger('myLambda')
 logger.setLevel(LOG_LEVEL)
 
-# DynamoDB (de)serialiser
+# DynamoDB (de)serializer
 ddbTs = TypeSerializer()
 ddbTd = TypeDeserializer()
 
