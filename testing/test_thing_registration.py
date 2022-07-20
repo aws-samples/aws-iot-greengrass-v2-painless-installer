@@ -2,10 +2,10 @@ from edge.install_gg import *
 
 
 if __name__ == "__main__":
-    DEVICE_SERIAL = "device01"
-    THING_NAME = "thing01"
+    DEVICE_SERIAL = "device04"
+    THING_NAME = "thing04"
     GG_SECRETS_DIR = "../garbage/secrets-{}".format(THING_NAME)
-    request_id = "c5a2fc63-41f7-4aed-a852-5ef26f05580c"
+    request_id = "baa796f6-fc86-44f1-91f1-188b93ccf043"
 
     cognito_domain = get_auth_uri(API_URI)
     app_token = get_app_token(

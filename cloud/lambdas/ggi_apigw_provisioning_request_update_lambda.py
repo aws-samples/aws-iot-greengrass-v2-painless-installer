@@ -74,11 +74,11 @@ def lambda_handler(event, context):
         except KeyError:
             return bad_request(msg="The requested new status is invalid: {} ".format(parameters.get('newStatus')))
 
-        if cu_status not in [Status.ALLOWED, Status.PROGRESS]:
+        if cu_status not in [Status.ALLOWED, Status.PROGRESS, Status.REGISTERED]:
             return bad_request(msg="The current status of the Provisioning Request is {} and cannot"
-                                   "be updated to {}".format(cu_status.name, new_status.name))
+                                   " be updated to {}".format(cu_status.name, new_status.name))
 
-        if new_status not in [Status.FAILED, Status.PROGRESS, Status.SUCCESS]:
+        if new_status not in [Status.FAILED, Status.PROGRESS, Status.REGISTERED, Status.SUCCESS]:
             return bad_request(msg="The requested new status {} is not allowed".format(new_status.name))
 
         update_request_status(current_request=item,

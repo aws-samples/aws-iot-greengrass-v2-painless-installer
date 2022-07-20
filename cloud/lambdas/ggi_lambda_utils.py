@@ -50,8 +50,9 @@ class Status(Enum):
     DENIED = 4
     ALLOWED = 5
     PROGRESS = 6
-    SUCCESS = 7
-    NONE = 8
+    REGISTERED = 7
+    SUCCESS = 8
+    NONE = 9
 
 
 FAILED_XACTIONS = [Status.FAILED, Status.CANCELLED, Status.DENIED]

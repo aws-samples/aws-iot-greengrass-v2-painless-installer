@@ -118,6 +118,14 @@ def lambda_handler(event, context):
         data_endpoint = response['endpointAddress']
         logger.debug("The IoT Endpoint is: {}".format(data_endpoint))
 
+        # Update the Status
+        new_status = Status.REGISTERED
+        update_request_status(current_request=item,
+                              new_status=new_status.name,
+                              action="Change Status to {}".format(new_status.name),
+                              table=DDB_TABLE,
+                              ddb_client=ddb_client)
+
         # Return the data
         return ok_200({'certificatePem': certificate_pem,
                        'iotDataEndpoint': data_endpoint,

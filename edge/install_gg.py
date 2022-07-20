@@ -17,15 +17,16 @@ This script will install AWS IoT Greengrass Version 2 (latest) and provision a n
 account. It interacts with Amazon API Gateway and Amazon Cognito running in your account and expects that you have
 deployed the matching AWS CloudFormation template and created at least one Cognito User allowed to provision devices.
 See the readme.md documentation for further details.
-"""
 
+Version of this script: 1.0.0
+"""
 import json
 import typing
 import urllib.error
 import urllib.parse
 import urllib.request
 from email.message import Message
-from base64 import b64encode
+from base64 import b64encode, b64decode
 import time
 from enum import Enum
 import platform
@@ -54,11 +55,14 @@ API_RESOURCE_REQUEST_CREATE = "/request/create"
 API_RESOURCE_REQUEST_STATUS = "/request/status"
 API_RESOURCE_REQUEST_UPDATE = "/request/update"
 API_RESOURCE_REGISTER_THING = "/provision/register-thing"
+API_RESOURCE_GREENGRASS_CONFIG = "/provision/greengrass-config"
 URL_GREENGRASS_NUCLEUS_DL = "https://d2s8p88vqu9w66.cloudfront.net/releases/greengrass-nucleus-latest.zip"
 GG_ZIP_DEST_DIR = "/tmp"
 GG_ZIP_DEST_FILE = "greengrass-nucleus.zip"
 GG_UNZIP_DEST_DIR = "/tmp/GreengrassInstaller"
 GG_SECRETS_DIR = "/greengrass-v2-certs"
+GG_ROOT_PATH = "/greengrass/v2"
+GG_CONFIG_FILE_NAME = "config.yaml"
 AMAZON_ROOT_CA_URL = "https://www.amazontrust.com/repository/AmazonRootCA1.pem"
 
 # Logger setup
@@ -74,8 +78,9 @@ class Status(Enum):
     DENIED = 4
     ALLOWED = 5
     PROGRESS = 6
-    SUCCESS = 7
-    NONE = 8
+    REGISTERED = 7
+    SUCCESS = 8
+    NONE = 9
 
 
 class ProvisioningException(Exception):
@@ -138,7 +143,7 @@ def check_requirements():
 def get_java_version():
     try:
         java_ver = subprocess.check_output(['java', '-version'], stderr=subprocess.STDOUT)
-        match = re.search('(\d+\.\d+).*', java_ver)
+        match = re.search('(\d+\.\d+).*', str(java_ver))
         if match:
             major, minor = match.group(0).strip('"').split(".")[:2]
             return int(minor) if int(major) == 1 else int(major)
@@ -152,7 +157,7 @@ def get_java_version():
 def get_glibc_version():
     try:
         glibc_ver = subprocess.check_output(['ldd', '--version'], stderr=subprocess.STDOUT)
-        match = re.search('(\d+\.\d+).*', glibc_ver)
+        match = re.search('(\d+\.\d+)', str(glibc_ver))
         if match:
             major, minor = match.group(0).strip('"').split(".")[:2]
             return int(major), int(minor)
@@ -167,6 +172,8 @@ def check_sudoers(fname="/etc/sudoers"):
     try:
         with open(fname) as f:
             for line in f.readlines():
+                line = line.replace("\t", " ")
+                line = line.rstrip("\n")
                 stripped_line = re.sub("\s\s+", " ", line).strip(" ")
                 if "root ALL=(ALL) ALL" in stripped_line or "root ALL=(ALL:ALL) ALL" in stripped_line:
                     return True
@@ -185,8 +192,10 @@ def check_tmp_directory():
 
 
 def check_requirements_linux():
-    required = ["ps", "sudo", "sh", "kill", "cp", "chmod", "rm", "ln", "echo", "exit", "id", "uname", "grep",
+    logger.info("Checking requirements for Linux platform")
+    required = ["ps", "sudo", "sh", "kill", "cp", "chmod", "rm", "ln", "echo", "id", "uname", "grep",
                 "systemctl", "useradd", "groupadd", "usermod", "openssl"]
+    # 'exit' is a shell command and cannot be checked with which
     java_min = 8
     glibc_min = (2, 25)  # major, minor
     result = {}
@@ -473,6 +482,18 @@ class SslCreds(object):
         self.crt_path = os.path.join(self.dest_dir, self.base_name + ".crt")
         self.ca_path = os.path.join(self.dest_dir, self.AMZ_CA_NAME)
 
+    @property
+    def certificate_file_path(self):
+        return self.crt_path
+
+    @property
+    def private_key_path(self):
+        return self.key_path
+
+    @property
+    def root_ca_path(self):
+        return self.ca_path
+
     def _get_dn_string(self):
         return "/CN={}/OU={}/O={}/L={}/ST={}/C={}".format(self.CN, self.OU, self.O, self.L, self.ST, self.C)
 
@@ -562,13 +583,77 @@ def provision_thing(device_id, transaction_id, csr, token, api_uri):
         return None
 
 
+def get_greengrass_config(token, api_uri, transaction_id, device_id):
+    url = "https://{}{}".format(api_uri, API_RESOURCE_GREENGRASS_CONFIG)
+    method = "GET"
+    headers = {'Authorization': token, "Accept": "text/plain"}
+    params = {'transactionId': transaction_id, 'deviceId': device_id}
+
+    response = request(
+        url=url,
+        params=params,
+        headers=headers,
+        method=method
+    )
+
+    if response.status == 200:
+        return b64decode(response.body).decode('utf-8')
+    else:
+        logger.critical("Error when requesting provisioning:")
+        logger.critical(response)
+        return None
+
+
+def get_greengrass_version():
+    try:
+        ggi_bin = "{}/lib/Greengrass.jar".format(GG_UNZIP_DEST_DIR)
+        gg_ver = subprocess.check_output(['java', '-jar', ggi_bin, '--version'], stderr=subprocess.STDOUT)
+        match = re.search('(\d+\.\d+.\d+)', str(gg_ver))
+        if match:
+            return match[0]
+        else:
+            return None
+    except Exception as e:
+        logger.critical("Exception when checking Greenrass installer version:\n {}".format(e))
+        return None
+
+
+def populate_greengrass_config(ssl_creds, template):
+    template = template.replace("$system.certificateFilePath$", ssl_creds.certificate_file_path)
+    template = template.replace("$system.privateKeyPath$", ssl_creds.private_key_path)
+    template = template.replace("$system.rootCaPath$", ssl_creds.root_ca_path)
+    template = template.replace("$system.rootpath$", GG_ROOT_PATH)
+    gg_ver = get_greengrass_version()
+    if not gg_ver:
+        raise ProvisioningException("Undefined Greengrass installer version")
+    template = template.replace("$services.aws.greengrass.Nucleus.version$", gg_ver)
+    return template
+
+
+def save_greengrass_config(cfg, directory=GG_UNZIP_DEST_DIR, file_name=GG_CONFIG_FILE_NAME):
+    gg_config_path = os.path.join(os.path.abspath(directory), file_name)
+    logger.debug("Saving Greengrass config to: {}".format(gg_config_path))
+    with open(gg_config_path, "w") as f:
+        f.write(cfg)
+    os.chmod(path=gg_config_path, mode=0o644)
+    return gg_config_path
+
+
+def install_greengrass(config_path):
+    # using subprocess doesn't work!!!
+    command = 'java -Droot="{}" -Dlog.store=FILE -jar {}/lib/Greengrass.jar --init-config {} ' \
+              '--component-default-user ggc_user:ggc_group ' \
+              '--setup-system-service true'.format(GG_ROOT_PATH, GG_UNZIP_DEST_DIR, config_path)
+    return os.system(command)
+
+
 # TODO: Move tho constants below to command line argument or config file
 # TODO: Consider creating an API endpoint to fetch other config variables
 CLIENT_ID = "5a1fda99b89mvj5ij3t903to88"
 CLIENT_SECRET = "1joira4ba7nccr9rga4568r6eu469clo37daas8aht0n4adjt9j1"
 API_URI = "zl9kcyhhzd.execute-api.us-east-1.amazonaws.com/Testing"
-DEVICE_SERIAL = "device09"
-THING_NAME = "thing09"
+DEVICE_SERIAL = "BadBoy-Instance4"
+THING_NAME = "badboy4"
 USER_NAME = "lautip"
 
 if __name__ == "__main__":
@@ -640,7 +725,7 @@ if __name__ == "__main__":
             creds.create_private_key_and_csr()
             csr = creds.get_csr()
         except Exception:
-            raise FailProvisioning("Could not create Key and CSR. PRovisioning Failed.")
+            raise FailProvisioning("Could not create Key and CSR. Provisioning Failed.")
         # Request Thing Provisioning from CSR
         response = provision_thing(device_id=DEVICE_SERIAL,
                                    transaction_id=request_id,
@@ -655,11 +740,47 @@ if __name__ == "__main__":
             raise FailProvisioning("Mismatching data or missing CRT:\n{}".format(response))
         creds.save_crt(crt)
 
-        # Install Greengrass Core
+        try:
+            # Install Greengrass Core
+            raw_cfg = get_greengrass_config(token=app_token,
+                                            api_uri=API_URI,
+                                            transaction_id=request_id,
+                                            device_id=DEVICE_SERIAL)
+            logger.debug("Config file received from API:\n{}".format(raw_cfg))
+            cfg = populate_greengrass_config(ssl_creds=creds, template=raw_cfg)
+            logger.debug("Final Greengrass configuration:\n{}".format(cfg))
+            cfg_path = save_greengrass_config(cfg)
+        except Exception as e:
+            msg = "Exception during Greengrass config preparation:\n{}".format(e)
+            logger.critical(msg)
+            raise FailProvisioning(e)
+
+        try:
+            resp = install_greengrass(cfg_path)
+            if resp == 0:
+                logger.info("Greengrass V2 successfully installed.")
+            else:
+                raise FailProvisioning("Greengrass V2 installation failed.")
+        except Exception as e:
+            msg = "Greengrass Installation failed:\n{}".format(e)
+            logger.critical(msg)
+            raise FailProvisioning(e)
 
         # Update Status to SUCCESS
+        new_status = Status.SUCCESS
+        resp_status = update_provisioning_request_status(token=app_token,
+                                                         api_uri=API_URI,
+                                                         transaction_id=request_id,
+                                                         device_id=DEVICE_SERIAL,
+                                                         new_status=new_status.name)
+        if new_status.name != resp_status:
+            logger.error("Status could not be updated to {}.".format(new_status.name))
 
-        logger.info("Goodbye")
+        # End message
+        print("WARNING: Running containerized Lambda functions is not enabled. "
+              "Check the documentation if you want to enable it:\n"
+              "https://docs.aws.amazon.com/greengrass/v2/developerguide/manual-installation.html#set-up-device-environment")
+        print("Goodbye. Enjoy Greengrass V2.")
 
     except FailProvisioning as e:
         if 'request_id' in locals() and 'app_token' in locals():
