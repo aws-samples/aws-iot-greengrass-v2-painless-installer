@@ -39,7 +39,7 @@ if not COG_CID:
 cog_client = boto3.client('cognito-idp')
 
 # Constants
-AUTHORIZED_RESOURCES = ["/manage/request"]
+AUTHORIZED_RESOURCES = ["/manage/request", "/manage/init/form"]
 
 
 def unauthorised():
@@ -117,7 +117,7 @@ def get_userinfo(tokens, cognito_url=COG_URL):
         return {}
 
 
-def get_authorizer_allow_policy(user_info, event):
+def get_authorizer_allow_policy(user_info, event, code):
     policy = {
         "principalId": "{}-{}".format(user_info['sub'], str(uuid4())),
         "policyDocument": {
@@ -132,7 +132,8 @@ def get_authorizer_allow_policy(user_info, event):
         },
         "context": {
             "username": user_info['username'],
-            "email": user_info['email']
+            "email": user_info['email'],
+            "code": code
         }
     }
     logger.debug("Authorizer Policy Document:\n{}".format(policy))
@@ -149,12 +150,7 @@ def lambda_handler(event, context):
     if not code:
         logger.debug("Denying for missing authorisation code")
         unauthorised()
-    state = event['queryStringParameters'].get('state')
-    if not state:
-        logger.debug("Denying for missing state")
-        unauthorised()
-    red = get_redirect_uri(event=event)
-    secret = get_user_pool_secret()
+
     tokens = get_tokens_from_code(authorization_code=code,
                                   redirect_uri=get_redirect_uri(event),
                                   client_secret=get_user_pool_secret())
@@ -167,6 +163,5 @@ def lambda_handler(event, context):
         logger.debug("Denying for missing User Info")
         unauthorised()
 
-    return get_authorizer_allow_policy(user_info=user_info, event=event)
-
+    return get_authorizer_allow_policy(user_info=user_info, event=event, code=code)
 

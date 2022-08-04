@@ -27,6 +27,7 @@ from email.message import Message
 from boto3.dynamodb.types import TypeSerializer, TypeDeserializer
 import re
 from datetime import datetime
+from base64 import b64encode
 
 
 # Set the logger and log level
@@ -233,3 +234,90 @@ def get_ddb_item(pkey, pvalue, skey, svalue, table, ddb_client):
         logger.warning("An edge device tried to access non-existing Provisioning Request:"
                        "pkey: {}, skey: {}".format(pvalue, svalue))
         return None
+
+
+def get_user_pool_secret(cog_client, user_ool_id, client_id):
+    resp = cog_client.describe_user_pool_client(
+        UserPoolId=user_ool_id,
+        ClientId=client_id
+    )
+    logger.debug("Response to Pool Description: {}".format(resp))
+    secret = resp['UserPoolClient'].get('ClientSecret', "")
+    if secret:
+        logger.debug("Secret for Client ID '{}' starts with '{}'...".format(client_id, secret[:5]))
+    else:
+        logger.debug("Client ID '{}' doesn't have any secret".format(client_id))
+    return secret
+
+
+def get_tokens_from_code(authorization_code, redirect_uri, client_secret, client_id, cognito_url):
+    url = "{}/oauth2/token".format(cognito_url)
+    method = "POST"
+    headers = {'Content-Type': "application/x-www-form-urlencoded"}
+    if client_secret:
+        b64_auth = 'Basic {}'.format(
+            b64encode(bytes("{}:{}".format(client_id, client_secret), "ascii")).decode("ascii"))
+        headers['Authorization'] = b64_auth
+    params = None
+    data_as_json = False
+    data = {
+        'grant_type': 'authorization_code',
+        'code': authorization_code,
+        'redirect_uri': redirect_uri,
+    }
+    if not client_secret:
+        data['client_id'] = client_id
+
+    response = request(
+        url=url,
+        data=data,
+        params=params,
+        headers=headers,
+        method=method,
+        data_as_json=data_as_json
+    )
+
+    if response.status == 200:
+        return response.json()
+    else:
+        logger.debug("Error response to auth code exchange:\n{}".format(response))
+        return {}
+
+
+def get_userinfo(tokens, cognito_url):
+    url = "{}/oauth2/userInfo".format(cognito_url)
+    method = "GET"
+    headers = {'Authorization': "Bearer {}".format(tokens.get('access_token', ""))}
+    response = request(
+        url=url,
+        headers=headers,
+        method=method
+    )
+    if response.status == 200:
+        return response.json()
+    else:
+        logger.debug("Error response to auth code exchange:\n{}".format(response))
+        return {}
+
+
+def get_form_html(resource_path, code, thing_name="", serial="", message=""):
+    action = "{}&code={}".format(resource_path, code)
+    html = '''
+    <!DOCTYPE html>
+    <html>
+    <body>
+
+    <h2>Enter the Provisioning Request properties below and submit</h2>
+
+    <form method="post" action={0}>
+      <label for="deviceId">Device serial number:</label><br>
+      <input type="text" id="deviceId" name="deviceId" value={1}><br>
+      <label for="thingName">Thing name:</label><br>
+      <input type="text" id="thingName" name="thingName" value={2}><br><br>
+      <input type="submit" value="Submit">
+    </form> 
+    <p>{3}</p>
+    </body>
+    </html>
+    '''.format(action, serial, thing_name, message)
+    return html
