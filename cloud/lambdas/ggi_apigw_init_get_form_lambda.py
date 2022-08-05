@@ -17,18 +17,28 @@
 # Import the helper functions from the layer
 from ggi_lambda_utils import *
 
-FORM_RESOURCE_PATH = "/manage/init/form/"
 
+def get_form_html(resource_path, code, thing_name="", serial="", message=""):
+    action = "{}?code={}".format(resource_path, code)
+    html = '''
+    <!DOCTYPE html>
+    <html>
+    <body>
 
-def get_authorizer_params(event):
-    to_retrieve = ['code']
-    params = event['requestContext'].get('authorizer')
-    d = {}
-    if params:
-        for p in to_retrieve:
-            d[p] = params[p]
-    # logger.debug("Authorizer Params: {}".format(d))
-    return d
+    <h2>Enter the Provisioning Request properties below and submit</h2>
+    <p>{3}</p><br>
+    <form method="post" action={0}>
+      <label for="deviceId">Device serial number:</label><br>
+      <input type="text" id="deviceId" name="deviceId" value="{1}"><br>
+      <label for="thingName">Thing name:</label><br>
+      <input type="text" id="thingName" name="thingName" value="{2}"><br><br>
+      <input type="submit" value="Submit">
+    </form> 
+
+    </body>
+    </html>
+    '''.format(action, serial, thing_name, message)
+    return html
 
 
 def lambda_handler(event, context):
@@ -36,7 +46,7 @@ def lambda_handler(event, context):
     return {
         'statusCode': 200,
         'headers': {'Content-Type': "text/html"},
-        'body': get_form_html(resource_path=FORM_RESOURCE_PATH,
-                              code=get_authorizer_params(event).get('code'))
+        'body': get_form_html(resource_path=event['requestContext']['path'],
+                              code=event['queryStringParameters'].get('code'))
     }
 

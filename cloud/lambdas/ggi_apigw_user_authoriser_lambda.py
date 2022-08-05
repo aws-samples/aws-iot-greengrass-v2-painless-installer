@@ -46,20 +46,6 @@ def unauthorised():
     raise Exception('Unauthorized')
 
 
-def get_user_pool_secret(user_ool_id=COG_POOL, client_id=COG_CID):
-    resp = cog_client.describe_user_pool_client(
-        UserPoolId=user_ool_id,
-        ClientId=client_id
-    )
-    logger.debug("Response to Pool Description: {}".format(resp))
-    secret = resp['UserPoolClient'].get('ClientSecret', "")
-    if secret:
-        logger.debug("Secret for Client ID '{}' starts with '{}'...".format(client_id, secret[:5]))
-    else:
-        logger.debug("Client ID '{}' doesn't have any secret".format(client_id))
-    return secret
-
-
 def get_redirect_uri(event):
     context = event['requestContext']
     red = "https://{0}{1}".format(context['domainName'], context['path'])
@@ -132,8 +118,7 @@ def get_authorizer_allow_policy(user_info, event, code):
         },
         "context": {
             "username": user_info['username'],
-            "email": user_info['email'],
-            "code": code
+            "email": user_info['email']
         }
     }
     logger.debug("Authorizer Policy Document:\n{}".format(policy))
@@ -153,7 +138,10 @@ def lambda_handler(event, context):
 
     tokens = get_tokens_from_code(authorization_code=code,
                                   redirect_uri=get_redirect_uri(event),
-                                  client_secret=get_user_pool_secret())
+                                  client_secret=get_user_pool_secret(cog_client=cog_client,
+                                                                     user_pool_id=COG_POOL,
+                                                                     client_id=COG_CID)
+                                  )
     if not tokens:
         logger.debug("Denying for missing tokens")
         unauthorised()
@@ -164,4 +152,3 @@ def lambda_handler(event, context):
         unauthorised()
 
     return get_authorizer_allow_policy(user_info=user_info, event=event, code=code)
-

@@ -200,6 +200,14 @@ def is_valid_thing_name(thing_name):
     return re.fullmatch(pattern=pattern, string=thing_name) is not None
 
 
+def is_new_iot_thing(thing_name, iot_client):
+    try:
+        _ = iot_client.describe_thing(thingName=thing_name)
+        return False
+    except iot_client.exceptions.ResourceNotFoundException:
+        return True
+
+
 def update_request_status(current_request, action, new_status, table, ddb_client):
     history = current_request['history']
     history[datetime.utcnow().isoformat()] = {'action': action,
@@ -300,24 +308,17 @@ def get_userinfo(tokens, cognito_url):
         return {}
 
 
-def get_form_html(resource_path, code, thing_name="", serial="", message=""):
-    action = "{}&code={}".format(resource_path, code)
-    html = '''
-    <!DOCTYPE html>
-    <html>
-    <body>
+def get_user_pool_secret(cog_client, user_pool_id, client_id):
+    resp = cog_client.describe_user_pool_client(
+        UserPoolId=user_pool_id,
+        ClientId=client_id
+    )
+    logger.debug("Response to Pool Description: {}".format(resp))
+    secret = resp['UserPoolClient'].get('ClientSecret', "")
+    if secret:
+        logger.debug("Secret for Client ID '{}' starts with '{}'...".format(client_id, secret[:5]))
+    else:
+        logger.debug("Client ID '{}' doesn't have any secret".format(client_id))
+    return secret
 
-    <h2>Enter the Provisioning Request properties below and submit</h2>
 
-    <form method="post" action={0}>
-      <label for="deviceId">Device serial number:</label><br>
-      <input type="text" id="deviceId" name="deviceId" value={1}><br>
-      <label for="thingName">Thing name:</label><br>
-      <input type="text" id="thingName" name="thingName" value={2}><br><br>
-      <input type="submit" value="Submit">
-    </form> 
-    <p>{3}</p>
-    </body>
-    </html>
-    '''.format(action, serial, thing_name, message)
-    return html

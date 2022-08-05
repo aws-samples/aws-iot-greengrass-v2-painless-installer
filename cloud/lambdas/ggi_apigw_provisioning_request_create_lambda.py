@@ -162,14 +162,6 @@ def internal_error(status_code=500):
     }
 
 
-def is_new_iot_thing(thing_name):
-    try:
-        _ = iot_client.describe_thing(thingName=thing_name)
-        return False
-    except iot_client.exceptions.ResourceNotFoundException:
-        return True
-
-
 def get_items_by_device_id(device_id, ddb_table_name=DDB_TABLE, index="deviceId-transactionId-index"):
     resp = ddb_client.query(
         TableName=ddb_table_name,
@@ -275,7 +267,7 @@ def lambda_handler(event, context):
             return bad_request("Request rejected")
 
         # Check if the Thing Name or the Device ID already exist.
-        if is_new_iot_thing(thing_name) is False:
+        if is_new_iot_thing(thing_name=thing_name, iot_client=iot_client) is False:
             return bad_request("A thing with name {} already exists".format(thing_name))
         xactions = get_items_by_device_id(device_id=device_id)
         for xaction in xactions:
