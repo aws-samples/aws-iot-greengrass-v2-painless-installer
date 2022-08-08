@@ -39,25 +39,11 @@ if not COG_CID:
 cog_client = boto3.client('cognito-idp')
 
 # Constants
-AUTHORIZED_RESOURCES = ["/manage/request"]
+AUTHORIZED_RESOURCES = ["/manage/request", "/manage/init/form"]
 
 
 def unauthorised():
     raise Exception('Unauthorized')
-
-
-def get_user_pool_secret(user_ool_id=COG_POOL, client_id=COG_CID):
-    resp = cog_client.describe_user_pool_client(
-        UserPoolId=user_ool_id,
-        ClientId=client_id
-    )
-    logger.debug("Response to Pool Description: {}".format(resp))
-    secret = resp['UserPoolClient'].get('ClientSecret', "")
-    if secret:
-        logger.debug("Secret for Client ID '{}' starts with '{}'...".format(client_id, secret[:5]))
-    else:
-        logger.debug("Client ID '{}' doesn't have any secret".format(client_id))
-    return secret
 
 
 def get_redirect_uri(event):
@@ -117,7 +103,7 @@ def get_userinfo(tokens, cognito_url=COG_URL):
         return {}
 
 
-def get_authorizer_allow_policy(user_info, event):
+def get_authorizer_allow_policy(user_info, event, code):
     policy = {
         "principalId": "{}-{}".format(user_info['sub'], str(uuid4())),
         "policyDocument": {
@@ -149,15 +135,13 @@ def lambda_handler(event, context):
     if not code:
         logger.debug("Denying for missing authorisation code")
         unauthorised()
-    state = event['queryStringParameters'].get('state')
-    if not state:
-        logger.debug("Denying for missing state")
-        unauthorised()
-    red = get_redirect_uri(event=event)
-    secret = get_user_pool_secret()
+
     tokens = get_tokens_from_code(authorization_code=code,
                                   redirect_uri=get_redirect_uri(event),
-                                  client_secret=get_user_pool_secret())
+                                  client_secret=get_user_pool_secret(cog_client=cog_client,
+                                                                     user_pool_id=COG_POOL,
+                                                                     client_id=COG_CID)
+                                  )
     if not tokens:
         logger.debug("Denying for missing tokens")
         unauthorised()
@@ -167,6 +151,4 @@ def lambda_handler(event, context):
         logger.debug("Denying for missing User Info")
         unauthorised()
 
-    return get_authorizer_allow_policy(user_info=user_info, event=event)
-
-
+    return get_authorizer_allow_policy(user_info=user_info, event=event, code=code)

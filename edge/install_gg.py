@@ -647,14 +647,16 @@ def install_greengrass(config_path):
     return os.system(command)
 
 
-# TODO: Move tho constants below to command line argument or config file
-# TODO: Consider creating an API endpoint to fetch other config variables
-CLIENT_ID = "5a1fda99b89mvj5ij3t903to88"
-CLIENT_SECRET = "1joira4ba7nccr9rga4568r6eu469clo37daas8aht0n4adjt9j1"
-API_URI = "zl9kcyhhzd.execute-api.us-east-1.amazonaws.com/Testing"
-DEVICE_SERIAL = "BadBoy-Instance4"
-THING_NAME = "badboy4"
-USER_NAME = "lautip"
+# DO NOT CHANGE THE CONSTANTS BELOW
+USER_NAME = "$USER_NAME$"
+THING_NAME = "$THING_NAME$"
+DEVICE_SERIAL = "$DEVICE_SERIAL$"
+API_URI = "$API_URI$"
+TOKEN = "$TOKEN$"
+# INSERT CONSTANTS BELOW
+
+# DO NOT CHANGE CONSTANTS ABOVE
+
 
 if __name__ == "__main__":
     try:
@@ -669,19 +671,9 @@ if __name__ == "__main__":
             logger.critical("Some requirements are missing :\n{}".format(missing))
             raise AbortProvisioning("Hosting system requirements are not met.")
 
-        # Retrieve the Authorization endpoint URI
-        cognito_domain = get_auth_uri(API_URI)
-        if not cognito_domain:
-            raise AbortProvisioning("Cognito Domain could not be retrieved")
-
         # Get a time-limited Application Token
-        app_token = get_app_token(
-            cognito_domain=cognito_domain,
-            client_id=CLIENT_ID,
-            client_secret=CLIENT_SECRET
-        )
-        if not app_token:
-            raise AbortProvisioning("Application Token could not be obtained")
+        app_token = TOKEN
+
 
         # Send a request to provision the device and store the response elements
         request_id = request_provisioning(
