@@ -150,9 +150,6 @@ def create_presigned_url(bucket_name, key, s3_client, expiration):
         logger.critical("Exception when generating the presigned URL")
         return None
 
-    # The response contains the presigned URL
-    return response
-
 
 def make_response(url, script_name="install_gg.py"):
     html = '''
@@ -176,7 +173,7 @@ def make_response(url, script_name="install_gg.py"):
     </p>
     3. Then launch the installation script with:</p>
     <pre><code style="background-color: #eee; border: 1px solid #999; display: block;">
-    python3 {1}
+    sudo python3 {1}
     </code></pre>
 
     </body>
@@ -189,6 +186,7 @@ def make_response(url, script_name="install_gg.py"):
         'headers': {'Content-Type': "text/html"},
         'body': html
     }
+
 
 def lambda_handler(event, context):
     try:
@@ -209,7 +207,7 @@ def lambda_handler(event, context):
             return bad_request(msg=msg)
 
         user_data = get_authorizer_params(event, ['username', 'email'])
-        api_uri = "https://{}/{}".format(event['requestContext']['domainName'],
+        api_uri = "{}/{}".format(event['requestContext']['domainName'],
                                          event['requestContext']['stage']).rstrip("/")
         secret = get_user_pool_secret(cog_client=cog_client,
                                       user_pool_id=COG_POOL,
