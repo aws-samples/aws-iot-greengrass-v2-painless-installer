@@ -13,12 +13,22 @@
 # specific language governing permissions and limitations under the License.
 
 """
+Returns the HTML form for the user to input the properties to configure the IoT Thing and Greengrass provisioning.
 """
 # Import the helper functions from the layer
 from ggi_lambda_utils import *
 
 
-def get_form_html(resource_path, code, thing_name="", serial="", message=""):
+def get_form_html(resource_path: str, code: str, thing_name: str = "", serial: str = "", message: str = "") -> str:
+    """
+
+    :param resource_path: API Gateway URL to POST the form when submitted
+    :param code: Authorisation code to be exchanged later for a token
+    :param thing_name: AWS IoT Thing name to be created
+    :param serial: A string for identifying the Device, like a serial number
+    :param message: Message to be displayed on the form
+    :return: HTML document as a string
+    """
     action = "{}?code={}".format(resource_path, code)
     html = '''
     <!DOCTYPE html>
@@ -38,15 +48,19 @@ def get_form_html(resource_path, code, thing_name="", serial="", message=""):
     </body>
     </html>
     '''.format(action, serial, thing_name, message)
+    logger.debug("HTML Form doc: \n{}".format(html))
     return html
 
 
-def lambda_handler(event, context):
-
+def lambda_handler(event, context) -> dict:
+    """
+    Expects the following query string parameter(s):
+    * code: Authorisation code to be exchanged later for a token
+    :return: response dict
+    """
     return {
         'statusCode': 200,
         'headers': {'Content-Type': "text/html"},
         'body': get_form_html(resource_path=event['requestContext']['path'],
                               code=event['queryStringParameters'].get('code'))
     }
-

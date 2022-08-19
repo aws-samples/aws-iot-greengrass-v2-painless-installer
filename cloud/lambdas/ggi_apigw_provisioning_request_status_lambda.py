@@ -13,6 +13,7 @@
 # specific language governing permissions and limitations under the License.
 
 """
+Returns the current status of a Provisioning Request
 """
 # Import the helper functions from the layer
 from ggi_lambda_utils import *
@@ -30,7 +31,12 @@ if not DDB_TABLE:
 ddb_client = boto3.client('dynamodb')
 
 
-def ok_200(status):
+def ok_200(status: str) -> dict:
+    """
+    Returns an OK response contianing the current status of the provisioning request
+    :param status: status name
+    :return: response
+    """
     return {
         'statusCode': 200,
         'headers': {'Content-Type': "application.json"},
@@ -38,7 +44,13 @@ def ok_200(status):
     }
 
 
-def bad_request(msg, status_code=403):
+def bad_request(msg, status_code: int = 400) -> dict:
+    """
+    Returns a 4xx response with Bad Request as default
+    :param msg: Message to the user
+    :param status_code: status code to use - default = 400
+    :return: response
+    """
     return {
         'statusCode': status_code,
         'headers': {'Content-Type': "application.json"},
@@ -46,7 +58,12 @@ def bad_request(msg, status_code=403):
     }
 
 
-def internal_error(status_code=500):
+def internal_error(status_code: int = 500) -> dict:
+    """
+    Something went wrong
+    :param status_code: status code to use - default = 500
+    :return: response
+    """
     msg = "Something unexpected happened. Try again and contact support if the problem persists."
     return {
         'statusCode': status_code,

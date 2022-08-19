@@ -13,6 +13,9 @@
 # specific language governing permissions and limitations under the License.
 
 """
+Marks an existing Provisioning Request as allowed or denied by the user.
+this is done after a thorough check of the various parameters because the entry point to this function is a link in
+an email and could have been altered.
 """
 # Import the helper functions from the layer
 from ggi_lambda_utils import *
@@ -34,7 +37,12 @@ if not DDB_TABLE:
 ddb_client = boto3.client('dynamodb')
 
 
-def ok_200(msg):
+def ok_200(msg: str) -> dict:
+    """
+    Returns a 200 response with HTML page in body
+    :param msg: A message to the user
+    :return: An HTML document in the response dict
+    """
     page = '<!doctype html><html lang="en-us"> <body><h1>Success</h1><br>{}</body></html>'.format(msg)
     return {
         'statusCode': 200,
@@ -43,7 +51,13 @@ def ok_200(msg):
     }
 
 
-def accepted_202(msg):
+def accepted_202(msg: str) -> dict:
+    """
+    Returns a 202 response with HTML page in body. To be used when the request was properly formatted but the
+    information provided does not allow to perform the expect operations
+    :param msg: A message to the user
+    :return: An HTML document in the response dict
+    """
     page = '<!doctype html><html lang="en-us"> <body><h1>Error !!!</h1><br>{}</body></html>'.format(msg)
     return {
         'statusCode': 202,
@@ -52,7 +66,12 @@ def accepted_202(msg):
     }
 
 
-def bad_request_400(msg):
+def bad_request_400(msg: str) -> dict:
+    """
+    The request was improperly formatted or parameters are missing.
+    :param msg: A message to the user
+    :return: An HTML document in the response dict
+    """
     page = '<!doctype html><html lang="en-us"> <body><h1>Error !!!</h1><br>{}</body></html>'.format(msg)
     return {
         'statusCode': 400,
@@ -61,7 +80,12 @@ def bad_request_400(msg):
     }
 
 
-def error_500(msg="Something went wrong on the Backend. Check the logs."):
+def error_500(msg: str = "Something went wrong on the Backend. Check the logs.") -> dict:
+    """
+    Something went wrong.
+    :param msg: A message to the user
+    :return: An HTML document in the response dict
+    """
     page = '<!doctype html><html lang="en-us"> <body><h1>Error !!!</h1><br>{}</body></html>'.format(msg)
     return {
         'statusCode': 500,
@@ -70,7 +94,13 @@ def error_500(msg="Something went wrong on the Backend. Check the logs."):
     }
 
 
-def decode_state(event):
+def decode_state(event: dict) -> dict:
+    """
+    Decode the query string parameters string embedded into the Cognito state query string parameter
+    FIXME: this does not support spaces in the query string parameters name nor value
+    :param event: the event object as passed to the handler
+    :return: a dictionary with the query string parameters included in the state parameter.
+    """
     state = event['queryStringParameters'].get('state')
     d = {}
     if state:
@@ -82,7 +112,12 @@ def decode_state(event):
     return d
 
 
-def get_authorizer_params(event):
+def get_authorizer_params(event: dict) -> dict:
+    """
+    Retrieves teh parameters passed by the Lambda authorizer
+    :param event: the event object as passed to the handler
+    :return: a dictionary with the parameters
+    """
     to_retrieve = ['email', 'username']
     params = event['requestContext'].get('authorizer')
     d = {}
@@ -93,11 +128,12 @@ def get_authorizer_params(event):
     return d
 
 
-def is_valid_state_params(params):
+def is_valid_state_params(params: dict) -> bool:
     """
-    State parameters are passed as Query String Parameters and could have been altered
-    :param params:
-    :return:
+    State parameters are passed as Query String Parameters and could have been altered. this is a minimalistic
+    validation of those parameters
+    :param params: dictionary with the paramters
+    :return: True if valid or False
     """
     good = True
     # Check transactionId is a UUID version 4
@@ -122,11 +158,25 @@ def is_valid_state_params(params):
     return good
 
 
-def is_same_requester(request, username, email):
+def is_same_requester(request: dict, username: str, email: str) -> bool:
+    """
+    Compares the info included in the request to the expected username and email address
+    :param request: dictionary with username and email keys
+    :param username: the user name
+    :param email: the email address of this user
+    :return: True if it's a match or False
+    """
     return request['requester']['email'] == email and request['requester']['username'] == username
 
 
 def lambda_handler(event, context):
+    """
+    Updates the provisioning request transaction in the DB with new status, after validation of the various parameters
+    and transaction current status
+    :param event:
+    :param context:
+    :return:
+    """
     try:
         # logger.debug("Event: {}".format(event))
 
@@ -163,7 +213,7 @@ def lambda_handler(event, context):
         update_request_status(current_request=prov_req,
                               new_status=new_status.name,
                               action=parameters['action'],
-                              table = DDB_TABLE,
+                              table=DDB_TABLE,
                               ddb_client=ddb_client)
         # Finally, send response to the User
         return ok_200("The provisioning request with TransactionId '{}' "

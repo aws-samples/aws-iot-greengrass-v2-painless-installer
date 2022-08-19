@@ -1,0 +1,8 @@
+{
+    "AttachedPolicies": [
+        {
+            "PolicyName": "ggi_GreengrassV2TokenExchangeRoleAccessPolicy",
+            "PolicyArn": "arn:aws:iam::132675061900:policy/ggi_GreengrassV2TokenExchangeRoleAccessPolicy"
+        }
+    ]
+}

@@ -15,7 +15,7 @@
 """
 This Lambda initiates a new provisioning. Conditions to allow a provisioning are:
 * The 'userName' maps to a user allowed to perform provisioning and with a validated email address.
-* There are no existing provisioning for this 'deviceId except' in states 'failed' or 'denied' or 'timeout'.
+* There are no existing provisioning for this 'deviceId' except in states 'failed' or 'denied' or 'timeout'.
 * A thing with this thingName doesn't exist.
 
 Actions executed:
@@ -29,15 +29,7 @@ Actions executed:
 * Email the User with 'approve' and 'deny' links
 * Return to the caller:
     * 200: {'transactionId': 'string'}
-    * 400: {'details': 'string'}
-
-Configuration:
-* Environment Variables:
-
-* Roles & Policies:
-
-
-
+    * 4xx/5xx: {'details': 'string'}
 """
 # Import the helper functions from the layer
 from ggi_lambda_utils import *
@@ -50,7 +42,6 @@ import os
 import json
 from uuid import uuid4
 from datetime import datetime
-
 
 # Cognito Configuration
 # TODO: simplify by detecting automatically when possible
@@ -88,19 +79,32 @@ ddb_client = boto3.client('dynamodb')
 ses_client = boto3.client("ses")
 
 
-def find_confirmed_user_in_group(user_name, users):
+def find_confirmed_user_in_group(user_name: str, users: dict) -> dict:
+    """
+    Find a user with confirmed email address
+    :param user_name: user name
+    :param users: the dictionary of users returned by Cognito
+    :return: the user of an empty dict
+    """
     # logger.debug("Users received: {}".format(users))
     for user in users:
         if user['Username'] == user_name:
             if user['UserStatus'] == "CONFIRMED":
                 return user
             else:
-                return None
-    return None
+                return {}
+    return {}
 
 
-def get_user_from_group(user_name, pool_id=COG_POOL, group=COG_GRP):
-    user = None
+def get_user_from_group(user_name: str, pool_id: str = COG_POOL, group: str = COG_GRP) -> dict:
+    """
+    Searches for a confirmed User in the specified group
+    :param user_name: Username
+    :param pool_id: Cognito pool ID
+    :param group: Cognito group name
+    :return: the User object or an empty dict if no match or not confirmed
+    """
+    user = {}
     if not user_name:
         logger.warning("user_name is None - can't proceed!")
         return user
@@ -109,6 +113,7 @@ def get_user_from_group(user_name, pool_id=COG_POOL, group=COG_GRP):
         UserPoolId=pool_id,
         GroupName=group
     )
+    # FIXME: move this to the function to avoid parsing the nextToken if we had a hit but email was not confirmed
     user = find_confirmed_user_in_group(user_name, resp.get('Users'))
     if not user:
         nextToken = resp.get('nextToken')
@@ -127,8 +132,13 @@ def get_user_from_group(user_name, pool_id=COG_POOL, group=COG_GRP):
     return user
 
 
-def get_user_email(user):
-    email = None
+def get_user_email(user: dict) -> str:
+    """
+    Returns the email from the User object
+    :param user: User dictionary returned by Cognito
+    :return: the email address
+    """
+    email = ""
     for attr in user.get('Attributes'):
         if attr.get('Name') == "email":
             email = attr.get('Value')
@@ -137,15 +147,26 @@ def get_user_email(user):
     return email
 
 
-def ok_200(transactionId):
+def ok_200(transaction_id: str) -> dict:
+    """
+    Returns a 200 response with the transaction ID in the JSON body
+    :param transaction_id: provisioning request transaction ID
+    :return: response
+    """
     return {
         'statusCode': 200,
         'headers': {'Content-Type': "application.json"},
-        'body': json.dumps({'transactionId': transactionId})
+        'body': json.dumps({'transactionId': transaction_id})
     }
 
 
-def bad_request(msg, status_code=403):
+def bad_request(msg: str, status_code: int = 403) -> dict:
+    """
+    Returns a 4xx response with Forbidden as default
+    :param msg: Message to the user
+    :param status_code: status code to use - default = 403
+    :return: response
+    """
     return {
         'statusCode': status_code,
         'headers': {'Content-Type': "application.json"},
@@ -153,7 +174,12 @@ def bad_request(msg, status_code=403):
     }
 
 
-def internal_error(status_code=500):
+def internal_error(status_code: int = 500) -> dict:
+    """
+    Something went wrong
+    :param status_code: status code to use - default = 500
+    :return: response
+    """
     msg = "Something unexpected happened. Try again and contact support if the problem persists."
     return {
         'statusCode': status_code,
@@ -162,7 +188,15 @@ def internal_error(status_code=500):
     }
 
 
-def get_items_by_device_id(device_id, ddb_table_name=DDB_TABLE, index="deviceId-transactionId-index"):
+def get_items_by_device_id(device_id: str, ddb_table_name: str = DDB_TABLE,
+                           index: str = "deviceId-transactionId-index"):
+    """
+    Retrieves all the DynamoDB items that match the device_id
+    :param device_id: the device identifier like the serial number
+    :param ddb_table_name: name of the DynamoDB table
+    :param index: name of the index to use
+    :return: unmarshalled Items returned by DynamoDB
+    """
     resp = ddb_client.query(
         TableName=ddb_table_name,
         IndexName=index,
@@ -178,7 +212,15 @@ def get_items_by_device_id(device_id, ddb_table_name=DDB_TABLE, index="deviceId-
     return unmarshall(resp['Items'])
 
 
-def get_items_by_thing_name(thing_name, ddb_table_name=DDB_TABLE, index="thingName-transactionId-index"):
+def get_items_by_thing_name(thing_name: str, ddb_table_name: str = DDB_TABLE,
+                            index: str = "thingName-transactionId-index"):
+    """
+    Retrieves all the DynamoDB items that match the thing_name
+    :param thing_name: Iot Core Thing Name
+    :param ddb_table_name: name of the DynamoDB table
+    :param index: name of the index to use
+    :return: unmarshalled Items returned by DynamoDB
+    """
     resp = ddb_client.query(
         TableName=ddb_table_name,
         IndexName=index,
@@ -194,7 +236,15 @@ def get_items_by_thing_name(thing_name, ddb_table_name=DDB_TABLE, index="thingNa
     return unmarshall(resp['Items'])
 
 
-def new_xaction_record(thing_name, device_id, username, email):
+def new_xaction_record(thing_name: str, device_id: str, username: str, email: str) -> dict:
+    """
+    Poulates a dictionary with the items required to create a new record in DynamoDB
+    :param thing_name: Iot Core Thing Name
+    :param device_id: device identifier like the serial number
+    :param username: username as recorded in Cognito
+    :param email: email address of the user
+    :return: the populated dictionary
+    """
     now = datetime.utcnow().isoformat()
     return {
         'transactionId': str(uuid4()),
@@ -211,7 +261,19 @@ def new_xaction_record(thing_name, device_id, username, email):
     }
 
 
-def send_email(transaction_id, device_id, thing_name, recipient, api_url=API_URL, source=SES_SENDER):
+def send_email(transaction_id: str, device_id: str, thing_name: str, recipient: str, api_url: str = API_URL,
+               source: str = SES_SENDER):
+    """
+    FIXME use urllib.parse.urlencode to create the state string. This should allow to support spaces in strings
+    Sends an email to the user containing links to allow or deny the provisioning request
+    :param transaction_id: provisioning request transaction ID
+    :param device_id: device identifier like the serial number
+    :param thing_name: Iot Core Thing Name
+    :param recipient: email address 'to'
+    :param api_url: the API Gateway URL where the user response will be sent
+    :param source: the email sender
+    :return: the response from SES (dict)
+    """
     auth_url = '{0}/login?client_id={1}&response_type=code'.format(COG_URL, COG_CID)
     state_allow = '&state=action=allow+transactionId={0}+deviceId={1}'.format(transaction_id, device_id)
     state_deny = '&state=action=deny+transactionId={0}+deviceId={1}'.format(transaction_id, device_id)
@@ -241,9 +303,10 @@ def send_email(transaction_id, device_id, thing_name, recipient, api_url=API_URL
 
 
 def lambda_handler(event, context):
+    """
+    Check validity of the request, write a new transaction in DynamoDB and send an email to the user
+    """
     try:
-        logger.info("Starting Lambda {}.{}".format(context.function_name, context.function_version))
-
         # Retrieve Query String Parameters
         user_name = event["queryStringParameters"].get('userName')
         thing_name = event["queryStringParameters"].get('thingName')
@@ -277,7 +340,7 @@ def lambda_handler(event, context):
                 return bad_request("There is already a Transaction in progress")
         xactions = get_items_by_thing_name(thing_name=thing_name)
         for xaction in xactions:
-            if xaction['currentStatus'] not in FAILED_XACTIONS:
+            if Status[xaction['currentStatus'].upper()] not in FAILED_XACTIONS:
                 logger.warning(
                     "Received new provisioning request for a Thing already in progress: {}".format(thing_name))
                 return bad_request("There is already a Transaction in progress")

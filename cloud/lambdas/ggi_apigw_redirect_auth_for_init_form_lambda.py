@@ -13,6 +13,12 @@
 # specific language governing permissions and limitations under the License.
 
 """
+Returns a 302 Redirect to Cognito log-in page with a call-back URL to display the Provisioning Request initiation
+Form after successful log-in.
+This is a 'trick' to force log-in before accessing the form but tnot require log-in again when submitting it.
+The Authorization Code returned by Cognito afer log-in will be embedded in the Form POST payload, which will
+allow the Form resource to exchange eh code for a token in order to authenticate the user.
+If you know a better way to do a two-step auth without a client app, let me know: lautip@amazon.com
 """
 # Import the helper functions from the layer
 from ggi_lambda_utils import *

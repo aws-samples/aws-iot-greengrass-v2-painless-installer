@@ -13,6 +13,9 @@
 # specific language governing permissions and limitations under the License.
 
 """
+This is a Lambda Layer collecting a set of functions used by many of the Lambda Functions of this application
+User in Lamnda Fucntions with:
+   from ggi_lambda_utils import *
 """
 import logging
 import os
@@ -24,6 +27,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from email.message import Message
+
+from boto3 import client as botoclient
 from boto3.dynamodb.types import TypeSerializer, TypeDeserializer
 import re
 from datetime import datetime
@@ -45,6 +50,10 @@ ddbTd = TypeDeserializer()
 
 
 class Status(Enum):
+    """
+    Defines the possible satus of a Status Request.
+    Make sure this stays in sync with the same class in the edge script
+    """
     PENDING = 1
     FAILED = 2
     CANCELLED = 3
@@ -56,12 +65,12 @@ class Status(Enum):
     NONE = 9
 
 
+# What statuses are final failures to the provisioning process transaction
 FAILED_XACTIONS = [Status.FAILED, Status.CANCELLED, Status.DENIED]
 
 
 class Response(typing.NamedTuple):
     """Container for HTTP response."""
-
     body: str
     headers: Message
     status: int
@@ -141,10 +150,10 @@ def request(
         url, data=request_data, headers=headers, method=method
     )
 
-    # print("url: {}".format(url))
-    # print("data: {}".format(data))
-    # print("headers: {}".format(headers))
-    # print("method: {}".format(method))
+    # logger.debug("url: {}".format(url))
+    # logger.debug("data: {}".format(data))
+    # logger.debug("headers: {}".format(headers))
+    # logger.debug("method: {}".format(method))
 
     try:
         with urllib.request.urlopen(httprequest) as httpresponse:
@@ -166,7 +175,7 @@ def request(
     return response
 
 
-def unmarshall(dynamo_obj):
+def unmarshall(dynamo_obj: typing.Union[dict, list]) -> typing.Union[dict, list, None]:
     """Convert a DynamoDB dict or list into a standard dict or list of dicts."""
     if dynamo_obj is None:
         return dynamo_obj
@@ -181,8 +190,12 @@ def unmarshall(dynamo_obj):
         raise RuntimeError("Failed to unmarshall DynamoDB object: {}".format(dynamo_obj))
 
 
-def marshall(python_obj):
-    """Convert a standard list or dict into a DynamoDB ."""
+def marshall(python_obj: typing.Union[dict, list]) -> dict:
+    """
+    Converts a standard list or dict into a DynamoDB compatible dict.
+    :param python_obj: A python Dict or List to marshall
+    :return: A dict compatible with DynamoDB API
+    """
     if isinstance(python_obj, dict):
         return {k: ddbTs.serialize(v) for k, v in python_obj.items()}
     elif isinstance(python_obj, list):
@@ -194,13 +207,23 @@ def marshall(python_obj):
         raise RuntimeError("Failed to marshall DynamoDB object: {}".format(python_obj))
 
 
-def is_valid_thing_name(thing_name):
-    # Check that Thing Name matches IoT Core requirements
+def is_valid_thing_name(thing_name: str) -> bool:
+    """
+    Checks that Thing Name matches IoT Core requirements
+    :param thing_name: The name to check
+    :return: True of match or False
+    """
     pattern = "^[0-9a-zA-Z:\-_]*$"
     return re.fullmatch(pattern=pattern, string=thing_name) is not None
 
 
-def is_new_iot_thing(thing_name, iot_client):
+def is_new_iot_thing(thing_name: str, iot_client: botoclient):
+    """
+    Checks if the thing_name already exists in IoT Core
+    :param thing_name: proposed name
+    :param iot_client: the boto3 client for Iot Core
+    :return: Ture if the name is new or False if it exists
+    """
     try:
         _ = iot_client.describe_thing(thingName=thing_name)
         return False
@@ -208,7 +231,17 @@ def is_new_iot_thing(thing_name, iot_client):
         return True
 
 
-def update_request_status(current_request, action, new_status, table, ddb_client):
+def update_request_status(current_request: dict, action: str, new_status: str, table: str,
+                          ddb_client: botoclient) -> None:
+    """
+    Updates the DynamodB Item with the new information
+    :param current_request: the unmarshalled Item as returned by DynamoDB API
+    :param action: brief description of what the change was about
+    :param new_status: The string associated with the new Status
+    :param table: DynamoDB able name
+    :param ddb_client: Boto3 client for DynamoDB
+    :return: Nothing but might raise an exception if problem
+    """
     history = current_request['history']
     history[datetime.utcnow().isoformat()] = {'action': action,
                                               'previous_status': str(current_request['currentStatus'])}
@@ -230,7 +263,19 @@ def update_request_status(current_request, action, new_status, table, ddb_client
     logger.debug("New DB values after update: \n{}".format(response))
 
 
-def get_ddb_item(pkey, pvalue, skey, svalue, table, ddb_client):
+def get_ddb_item(pkey: str, pvalue: str, skey: str, svalue: str, table: str,
+                 ddb_client: botoclient) -> typing.Union[dict, list, None]:
+    """
+    Retrieve an item from DynamoDB using Partition Key and Sort Key
+    :param pkey: Partition Key name
+    :param pvalue:Partition Key value
+    :param skey: Sort Key name
+    :param svalue:Sort Key value
+    :param table: DynamodB Table name
+    :param ddb_client: boto3 client for DynamoDB
+    :return: The unmarshalled dynamodB Item or None
+    """
+
     try:
         response = ddb_client.get_item(
             Key=marshall({pkey: pvalue, skey: svalue}),
@@ -244,21 +289,17 @@ def get_ddb_item(pkey, pvalue, skey, svalue, table, ddb_client):
         return None
 
 
-def get_user_pool_secret(cog_client, user_ool_id, client_id):
-    resp = cog_client.describe_user_pool_client(
-        UserPoolId=user_ool_id,
-        ClientId=client_id
-    )
-    logger.debug("Response to Pool Description: {}".format(resp))
-    secret = resp['UserPoolClient'].get('ClientSecret', "")
-    if secret:
-        logger.debug("Secret for Client ID '{}' starts with '{}'...".format(client_id, secret[:5]))
-    else:
-        logger.debug("Client ID '{}' doesn't have any secret".format(client_id))
-    return secret
-
-
-def get_tokens_from_code(authorization_code, redirect_uri, client_secret, client_id, cognito_url):
+def get_tokens_from_code(authorization_code: str, redirect_uri: str, client_secret: str, client_id: str,
+                         cognito_url: str) -> dict:
+    """
+    Exchanges the Authorization Code for Tokens
+    :param authorization_code: the Code returns by Cognito after Auth
+    :param redirect_uri: The URL to redirect to after code exchange
+    :param client_secret: Cognito client password or secret
+    :param client_id: Cognito client ID
+    :param cognito_url: Cognito domain
+    :return: a dict containing the Cognito Tokens or empty dict
+    """
     url = "{}/oauth2/token".format(cognito_url)
     method = "POST"
     headers = {'Content-Type': "application/x-www-form-urlencoded"}
@@ -292,7 +333,13 @@ def get_tokens_from_code(authorization_code, redirect_uri, client_secret, client
         return {}
 
 
-def get_userinfo(tokens, cognito_url):
+def get_userinfo(tokens: dict, cognito_url: str) -> dict:
+    """
+    Retrieves the User Info with a Token from the public Cognito userInfo endpoint
+    :param tokens: Dictionary of Tokens
+    :param cognito_url: Cognito Domain
+    :return: User dictionary as returned by userInfo or empty dict
+    """
     url = "{}/oauth2/userInfo".format(cognito_url)
     method = "GET"
     headers = {'Authorization': "Bearer {}".format(tokens.get('access_token', ""))}
@@ -308,7 +355,14 @@ def get_userinfo(tokens, cognito_url):
         return {}
 
 
-def get_user_pool_secret(cog_client, user_pool_id, client_id):
+def get_user_pool_secret(cog_client: botoclient, user_pool_id: str, client_id: str) -> str:
+    """
+    Retrieve the password for the Cognito User
+    :param cog_client:
+    :param user_pool_id:
+    :param client_id:
+    :return:
+    """
     resp = cog_client.describe_user_pool_client(
         UserPoolId=user_pool_id,
         ClientId=client_id
@@ -320,5 +374,4 @@ def get_user_pool_secret(cog_client, user_pool_id, client_id):
     else:
         logger.debug("Client ID '{}' doesn't have any secret".format(client_id))
     return secret
-
 

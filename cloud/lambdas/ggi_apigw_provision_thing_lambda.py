@@ -13,6 +13,8 @@
 # specific language governing permissions and limitations under the License.
 
 """
+Provisions a new IoT Thing in AWS IoT Core using a provisioning template.
+The CSR is signed and the certificate is returned to the caller together with other necessary information.
 """
 # Import the helper functions from the layer
 from ggi_lambda_utils import *
@@ -40,7 +42,12 @@ s3_client = boto3.client('s3')
 iot_client = boto3.client('iot')
 
 
-def ok_200(body):
+def ok_200(body: dict) -> dict:
+    """
+    Returns a 200 response with JSON body
+    :param body: dictionary of returned properties
+    :return: response
+    """
     return {
         'statusCode': 200,
         'headers': {'Content-Type': "application.json"},
@@ -48,7 +55,12 @@ def ok_200(body):
     }
 
 
-def bad_request(msg, status_code=403):
+def bad_request(msg: str, status_code: int = 403) -> dict:
+    """
+    :param msg: error message to display
+    :param status_code: error code
+    :return: response
+    """
     return {
         'statusCode': status_code,
         'headers': {'Content-Type': "application.json"},
@@ -56,7 +68,12 @@ def bad_request(msg, status_code=403):
     }
 
 
-def internal_error(status_code=500):
+def internal_error(status_code: int = 500) -> dict:
+    """
+    No custom message supported to avoid leaking of info
+    :param status_code: error code
+    :return: response
+    """
     msg = "Something unexpected happened. Try again and contact support if the problem persists."
     return {
         'statusCode': status_code,
@@ -65,8 +82,17 @@ def internal_error(status_code=500):
     }
 
 
-def lambda_handler(event, context):
-    # Retrieve properties and request
+def lambda_handler(event, context) -> dict:
+    """
+    Provision a Thing in IoT Core. Expects the body of event to contain a string-encoded JSON object with
+    the following elements:
+    * CSR: Certificate signature request
+    * deviceId: Device identifier like a serial number
+    * transactionId: the UUID generated when creating the provisioning request
+    * provisioningTemplate: S3 key of an alternative provisioning template to use.
+      If omitted the template set by the corresponding environment variable is used.
+    """
+    # Retrieve properties and the provisioning request information
     try:
         body = json.loads(event['body'])
         csr = body['CSR']
@@ -92,6 +118,7 @@ def lambda_handler(event, context):
         traceback.print_exc(file=sys.stdout)
         return internal_error()
 
+    # Get the template
     try:
         response = s3_client.get_object(Bucket=S3_BUCKET, Key=template_name)
         template = json.loads(response['Body'].read())
@@ -101,6 +128,7 @@ def lambda_handler(event, context):
         return bad_request(msg="The provisioning template could not be read")
 
     try:
+        # Register the Thing in IoT Core
         response = iot_client.register_thing(
             templateBody=json.dumps(template),
             parameters={
@@ -110,7 +138,8 @@ def lambda_handler(event, context):
             }
         )
         logger.info("New IoT Thing {} successfully registered".format(thing_name))
-        print(response)
+        logger.debug(response)
+        # Extract the certificate signed from the CSR
         certificate_pem = response['certificatePem']
 
         # Fetch the IoT Data Endpoint
@@ -118,7 +147,7 @@ def lambda_handler(event, context):
         data_endpoint = response['endpointAddress']
         logger.debug("The IoT Endpoint is: {}".format(data_endpoint))
 
-        # Update the Status
+        # Update the Status in DynamoDB
         new_status = Status.REGISTERED
         update_request_status(current_request=item,
                               new_status=new_status.name,

@@ -131,3 +131,7 @@ dmypy.json
 # Pyre type checker
 .pyre/
 /garbage/
+
+# Draw.io
+doc/*.bkp
+doc/*.dtmp
