@@ -7,9 +7,9 @@ with Amazon Cognito in order to initiate the installation process. No specific k
 Greengrass is necessary.
 
 ## Architecture diagram
-![Architecture Diagram](./doc/ArchitectureDiagrams-Overall Architecture.png)
+![Architecture Diagram](./doc/ArchitectureDiagrams-OverallArchitecture.png)
 ### API Endpoints
-![Endpoints](./doc/ArchitectureDiagrams-API Endpoints.png)
+![Endpoints](./doc/ArchitectureDiagrams-APIEndpoints.png)
 
 ## Flow Diagram
 ![Flow Diagram](./doc/ArchitectureDiagrams-FlowDiagram.png)
