@@ -2,7 +2,10 @@
   "app": "python3 app.py",
   "watch": {
     "include": [
-      "**"
+      "app.py",
+      "cdk/**",
+      "cloud/lambdas/*",
+      "edge/install_gg.py"
     ],
     "exclude": [
       "README.md",
@@ -10,8 +13,7 @@
       "requirements*.txt",
       "source.bat",
       "**/__init__.py",
-      "python/__pycache__",
-      "tests"
+      "python/__pycache__"
     ]
   },
   "context": {
