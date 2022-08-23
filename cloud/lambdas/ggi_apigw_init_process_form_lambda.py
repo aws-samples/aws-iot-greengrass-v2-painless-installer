@@ -13,9 +13,19 @@
 # specific language governing permissions and limitations under the License.
 
 """
+Processes the initialisation form received:
+* Validate the user Auth
+* Validates the parameters received
+* Configures the script to run at the edge
+* Returns an HTML page where the user can copy the link to the installation script to download
+and run it on the Device
+
+The provisioning script contains a Cognito Token.
+The S3 pre-signed URL has a short validity period.
 """
 # Import the helper functions from the layer
 from ggi_lambda_utils import *
+from typing import List
 
 import boto3
 from urllib.parse import parse_qs
@@ -43,11 +53,16 @@ cog_client = boto3.client('cognito-idp')
 s3_client = boto3.client('s3')
 iot_client = boto3.client('iot')
 
-INSERT_STRING = "# INSERT CONSTANTS BELOW"
+# Validity period of the S3 pre-signed URL
 PRESIGNED_EXPIRATION = 600
 
 
-def bad_request(msg, status_code=403):
+def bad_request(msg: str, status_code: int = 403) -> dict:
+    """
+    :param msg: error message to display
+    :param status_code: error code
+    :return: response
+    """
     # TODO: Make better HTML response for the user
     return {
         'statusCode': status_code,
@@ -56,7 +71,12 @@ def bad_request(msg, status_code=403):
     }
 
 
-def internal_error(status_code=500):
+def internal_error(status_code: int = 500) -> dict:
+    """
+    No custom message supported to avoid leaking of info
+    :param status_code: error code
+    :return: response
+    """
     msg = "Something unexpected happened. Try again and contact support if the problem persists."
     return {
         'statusCode': status_code,
@@ -65,7 +85,13 @@ def internal_error(status_code=500):
     }
 
 
-def get_authorizer_params(event, to_retrieve):
+def get_authorizer_params(event: dict, to_retrieve: List[str]) -> dict:
+    """
+    Returns a dictionary containing the elements in to_retrieve fetched from the Authorizer parameters
+    :param event: the event passed by API Gateway to the handler
+    :param to_retrieve: list of strings describing the parameters to retrieve
+    :return: dictionary with the retrieved parameters
+    """
     params = event['requestContext'].get('authorizer')
     d = {}
     if params:
@@ -75,8 +101,11 @@ def get_authorizer_params(event, to_retrieve):
     return d
 
 
-def get_form_elements(event):
+def get_form_elements(event: dict) -> dict:
     """
+    Parses the form to retrieve its fields
+    :param event: the event passed by API Gateway to the handler
+    :return: dictionary with form elements
     """
     params = event['body']
     d = {}
@@ -86,7 +115,13 @@ def get_form_elements(event):
     return d
 
 
-def get_app_token(cognito_url, client_id, client_secret):
+def get_app_token(cognito_url: str, client_id: str, client_secret: str) -> str:
+    """
+    :param cognito_url: Cognito domain for this app
+    :param client_id: Cognito client ID for this app
+    :param client_secret: Cognito client secret for this app
+    :return: Cognito Access token or an empty string
+    """
     url = "{}/oauth2/token".format(cognito_url)
     method = "POST"
     b64_auth = 'Basic {}'.format(b64encode(bytes("{}:{}".format(client_id, client_secret), "ascii")).decode("ascii"))
@@ -110,10 +145,16 @@ def get_app_token(cognito_url, client_id, client_secret):
     if response.status == 200:
         return response.json().get('access_token')
     else:
-        return None
+        return ""
 
 
-def get_installer_script(installer_script, bucket):
+def get_installer_script(installer_script: str, bucket: str) -> str:
+    """
+    Retrieve the installation script from S3. This script is sufficiently compact to be returned as a string
+    :param installer_script: S3 key pointing to the script
+    :param bucket: S3 Bucket name
+    :return: the script or an emtpy string
+    """
     try:
         response = s3_client.get_object(Bucket=bucket, Key=installer_script)
         script = response['Body'].read().decode('utf-8')
@@ -121,37 +162,59 @@ def get_installer_script(installer_script, bucket):
         return script
     except Exception as e:
         logger.critical("Exception when reading Script {}/{} from S3: \n{}".format(bucket, installer_script, e))
-        return None
+        return ""
 
 
-def write_to_s3(bucket, data, key, s3_client):
+def write_to_s3(bucket: str, data: str, key: str, s3_client: boto3.client) -> bool:
+    """
+    Write data to S3
+    :param bucket: S3 Bucket name
+    :param data: body of the objet to write
+    :param key: S3 object key
+    :param s3_client: boto3 client for S3
+    :return: True for success or False
+    """
     try:
         if not isinstance(data, bytes):
             data = bytes(data, "utf-8")
         _ = s3_client.put_object(Body=data,
-                                         Bucket=bucket,
-                                         Key=key)
+                                 Bucket=bucket,
+                                 Key=key)
         return True
     except Exception as e:
         logger.critical("Exception when writing to S3: \n{}".format(e))
         return False
 
 
-def create_presigned_url(bucket_name, key, s3_client, expiration):
+def create_presigned_url(bucket: str, key: str, s3_client: boto3.client, expiration: int) -> str:
+    """
+    Return a pre-signed URL for the S3 object
+    :param bucket: S3 Bucket name
+    :param key:S3 object key
+    :param s3_client:  boto3 client for S3
+    :param expiration: URL expiration time in seconds
+    :return: pre-signed URL as string
+    """
     try:
-        logger.debug("Creating presigned URL for: {}/{}".format(bucket_name, key))
+        logger.debug("Creating presigned URL for: {}/{}".format(bucket, key))
         response = s3_client.generate_presigned_url('get_object',
-                                                    Params={'Bucket': bucket_name,
+                                                    Params={'Bucket': bucket,
                                                             'Key': key},
                                                     ExpiresIn=expiration)
         logger.debug("Presigned URL is:\n{}".format(response))
         return response
     except Exception as e:
-        logger.critical("Exception when generating the presigned URL")
-        return None
+        logger.critical("Exception when generating the presigned URL: \n{}".format(e))
+        return ""
 
 
-def make_response(url, script_name="install_gg.py"):
+def make_response(url: str, script_name: str = "install_gg.py") -> dict:
+    """
+    Returns an HTML page giving instructions to the user to proceed with installation
+    :param url: pre-sgined URL to download the script
+    :param script_name: the suggested name of the script once downloaded
+    :return: Response containing the HTML page in the body
+    """
     html = '''
     <!DOCTYPE html>
     <html>
@@ -180,7 +243,6 @@ def make_response(url, script_name="install_gg.py"):
     </html>
     '''.format(url, script_name)
 
-
     return {
         'statusCode': 200,
         'headers': {'Content-Type': "text/html"},
@@ -188,27 +250,37 @@ def make_response(url, script_name="install_gg.py"):
     }
 
 
-def lambda_handler(event, context):
+def lambda_handler(event, context) -> dict:
+    """
+    Expects a form to be passed in the event body with the following elements:
+    * thingName: the name of the IoT Thing to be created
+    * deviceId: an identifer for the device like a serial number
+    :return: HTML page with instructions for installing Greengrass on teh device
+    """
     try:
         logger.debug("event is:\n{}".format(event))
+        # Retrieve the form elements
         params = get_form_elements(event=event)
         if not ('thingName' in params and 'deviceId' in params):
             return bad_request("Malformed Form data")
         msg = ""
         thing_name = params['thingName'][0]
         device_id = params['deviceId'][0]
+        # Check validity of the elements
         if not is_valid_thing_name(thing_name):
             msg += "Thing Name must comply with specification: '{}'\n".format("^[0-9a-zA-Z:\-_]*$")
         if not is_new_iot_thing(thing_name=thing_name, iot_client=iot_client):
             msg += "This Thing Name is already used: {}".format(thing_name)
         if " " in device_id:
+            # FIXME: remove if/when spaces are supported
             msg += "Device Id cannot contain spaces\n"
         if msg:
             return bad_request(msg=msg)
 
+        # Prepare the customized constants for the script
         user_data = get_authorizer_params(event, ['username', 'email'])
         api_uri = "{}/{}".format(event['requestContext']['domainName'],
-                                         event['requestContext']['stage']).rstrip("/")
+                                 event['requestContext']['stage']).rstrip("/")
         secret = get_user_pool_secret(cog_client=cog_client,
                                       user_pool_id=COG_POOL,
                                       client_id=COG_CID)
@@ -218,6 +290,7 @@ def lambda_handler(event, context):
             logger.critical("Could not get the token for the app.")
             return internal_error()
 
+        # WARNING: The keys of this dict must match placeholders in the installation (raw) script
         cfg_const = {'$USER_NAME$': user_data['username'],
                      '$THING_NAME$': thing_name,
                      '$DEVICE_SERIAL$': device_id,
@@ -226,23 +299,29 @@ def lambda_handler(event, context):
                      }
         logger.debug("Config String:\n{}".format(cfg_const))
 
+        # Fetch the raw script from S3 and replace the constant values
         script = get_installer_script(installer_script=INSTALLER_SCRIPT, bucket=S3_RESOURCES)
         if not script:
             logger.critical("Could not read the script from S3.")
             return internal_error()
 
-        for k,v in cfg_const.items():
+        for k, v in cfg_const.items():
             script = script.replace(k, v, 1)
 
+        # Save to S3 and get a pre-signed URL
         out_file_name = "{}-{}-{}".format(thing_name, device_id, INSTALLER_SCRIPT)
         if write_to_s3(bucket=S3_OUTPUTS, key=out_file_name, data=script, s3_client=s3_client) is not True:
             logger.critical("Could not write the script to S3.")
             return internal_error()
 
-        presigned_url = create_presigned_url(bucket_name=S3_OUTPUTS, key=out_file_name,
+        presigned_url = create_presigned_url(bucket=S3_OUTPUTS, key=out_file_name,
                                              s3_client=s3_client, expiration=PRESIGNED_EXPIRATION)
+        if not presigned_url:
+            logger.critical("Could not get the pre-signed URL.")
+            return internal_error()
 
-        return make_response(url = presigned_url)
+        # Return the HTML response page
+        return make_response(url=presigned_url)
 
     except Exception as e:
         logger.critical("Exception: {}".format(e))

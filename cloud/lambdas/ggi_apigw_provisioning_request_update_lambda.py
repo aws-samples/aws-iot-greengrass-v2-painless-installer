@@ -13,6 +13,9 @@
 # specific language governing permissions and limitations under the License.
 
 """
+Updates a provisioning request with a new status. This Lambda cannot be called to allow or deny a request.
+It is only used when the provisioning request has previously been allowed or is in progress.
+On success, returns the new status name in the response body.
 """
 # Import the helper functions from the layer
 from ggi_lambda_utils import *
@@ -21,8 +24,6 @@ from ggi_lambda_utils import *
 import os
 import sys
 import boto3
-from uuid import UUID
-import re
 import traceback
 
 # DynamoDB configuration
@@ -34,7 +35,12 @@ if not DDB_TABLE:
 ddb_client = boto3.client('dynamodb')
 
 
-def ok_200(status):
+def ok_200(status: str) -> dict:
+    """
+    Returns an OK response contianing the current status of the provisioning request
+    :param status: status name
+    :return: response
+    """
     return {
         'statusCode': 200,
         'headers': {'Content-Type': "application.json"},
@@ -42,7 +48,13 @@ def ok_200(status):
     }
 
 
-def bad_request(msg, status_code=403):
+def bad_request(msg, status_code: int = 400) -> dict:
+    """
+    Returns a 4xx response with Bad Request as default
+    :param msg: Message to the user
+    :param status_code: status code to use - default = 400
+    :return: response
+    """
     return {
         'statusCode': status_code,
         'headers': {'Content-Type': "application.json"},
@@ -50,7 +62,12 @@ def bad_request(msg, status_code=403):
     }
 
 
-def internal_error(status_code=500):
+def internal_error(status_code: int = 500) -> dict:
+    """
+    Something went wrong
+    :param status_code: status code to use - default = 500
+    :return: response
+    """
     msg = "Something unexpected happened. Try again and contact support if the problem persists."
     return {
         'statusCode': status_code,
@@ -61,6 +78,7 @@ def internal_error(status_code=500):
 
 def lambda_handler(event, context):
     try:
+        # Retrieve the Item from DynamoDB
         parameters = event['queryStringParameters']
         item = get_ddb_item(pkey='transactionId', pvalue=parameters['transactionId'],
                             skey='deviceId', svalue=parameters['deviceId'],
@@ -68,6 +86,7 @@ def lambda_handler(event, context):
         if not item:
             return bad_request(msg="The provisioning request was not found.")
 
+        # Conditionally update the Status.
         cu_status = Status[item['currentStatus']]
         try:
             new_status = Status[parameters.get('newStatus')]
@@ -87,6 +106,7 @@ def lambda_handler(event, context):
                               table=DDB_TABLE,
                               ddb_client=ddb_client)
 
+        # Respond with the new status name
         return ok_200(status=new_status.name)
 
     except Exception as e:

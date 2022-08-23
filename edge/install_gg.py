@@ -15,7 +15,7 @@
 """
 This script will install AWS IoT Greengrass Version 2 (latest) and provision a new Greengrass Core Device in your
 account. It interacts with Amazon API Gateway and Amazon Cognito running in your account and expects that you have
-deployed the matching AWS CloudFormation template and created at least one Cognito User allowed to provision devices.
+deployed the matching AWS CloudFormation template, and created at least one Cognito User allowed to provision devices.
 See the readme.md documentation for further details.
 
 Version of this script: 1.0.0
@@ -26,7 +26,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from email.message import Message
-from base64 import b64encode, b64decode
+from base64 import b64decode
 import time
 from enum import Enum
 import platform
@@ -72,6 +72,10 @@ logger.setLevel(LOG_LEVEL)
 
 
 class Status(Enum):
+    """
+    Defines the possible satus of a Status Request.
+    Make sure this stays in sync with the same class in the edge script
+    """
     PENDING = 1
     FAILED = 2
     CANCELLED = 3
@@ -129,7 +133,12 @@ class Response(typing.NamedTuple):
         })
 
 
-def check_requirements():
+def check_requirements() -> dict:
+    """
+    Initiates checkng the requirements for installing Greengrass are met for the platform this script is running on
+    :return:
+    :raises: ProvisioningException
+    """
     os_type = platform.system()
     if os_type == "Linux":
         return check_requirements_linux()
@@ -140,7 +149,11 @@ def check_requirements():
         raise ProvisioningException("System detected: {}. Only Linux platforms supported.".format(os_type))
 
 
-def get_java_version():
+def get_java_version() -> int:
+    """
+    Retrieves the Java version if installed.
+    :return: the major of the Java version or 0 if Java not installed
+    """
     try:
         java_ver = subprocess.check_output(['java', '-version'], stderr=subprocess.STDOUT)
         match = re.search('(\d+\.\d+).*', str(java_ver))
@@ -154,7 +167,11 @@ def get_java_version():
         return 0
 
 
-def get_glibc_version():
+def get_glibc_version() -> typing.Tuple[int, int]:
+    """
+    Retrieves the version of glic
+    :return: (major, minor) and (0,0) if not installed
+    """
     try:
         glibc_ver = subprocess.check_output(['ldd', '--version'], stderr=subprocess.STDOUT)
         match = re.search('(\d+\.\d+)', str(glibc_ver))
@@ -168,7 +185,12 @@ def get_glibc_version():
         return 0, 0
 
 
-def check_sudoers(fname="/etc/sudoers"):
+def check_sudoers(fname="/etc/sudoers") -> bool:
+    """
+    Checks if sudoer is properly configured
+    :param fname: file /absolute_path/name where sudoers are configured
+    :return: True of correct or False
+    """
     try:
         with open(fname) as f:
             for line in f.readlines():
@@ -183,7 +205,11 @@ def check_sudoers(fname="/etc/sudoers"):
         return False
 
 
-def check_tmp_directory():
+def check_tmp_directory() -> bool:
+    """
+    Checks if /tmp has execute permission
+    :return: True if /tmp is correctly configured or False
+    """
     try:
         return os.access("/tmp", os.X_OK)
     except Exception as e:
@@ -191,25 +217,22 @@ def check_tmp_directory():
         return False
 
 
-def check_requirements_linux():
+def check_requirements_linux() -> dict:
+    """
+    Checks Greengrass requirements for the Linux OS
+    :return: a dictionary with each requirement as key and True (met) or False (not met) as value
+    """
     logger.info("Checking requirements for Linux platform")
     required = ["ps", "sudo", "sh", "kill", "cp", "chmod", "rm", "ln", "echo", "id", "uname", "grep",
                 "systemctl", "useradd", "groupadd", "usermod", "openssl"]
-    # 'exit' is a shell command and cannot be checked with which
+    # 'exit' is a shell command and cannot be checked with which and is omitted
     java_min = 8
     glibc_min = (2, 25)  # major, minor
     result = {}
     for req in required:
-        if subprocess.call(['which', req], stdout=subprocess.DEVNULL) == 0:
-            result[req] = True
-        else:
-            result[req] = False
+        result[req] = subprocess.call(['which', req], stdout=subprocess.DEVNULL) == 0
 
-    java_ver = get_java_version()
-    if java_ver < java_min:
-        result['java'] = False
-    else:
-        result['java'] = True
+    result['java'] = get_java_version() >= java_min
 
     glibc_ver = get_glibc_version()
     result['glibc'] = glibc_ver[0] > glibc_min[0] or (glibc_ver[0] == glibc_min[0] and glibc_ver[1] >= glibc_min[1])
@@ -220,16 +243,22 @@ def check_requirements_linux():
     # Is sudoers correctly set
     result['sudoers'] = check_sudoers()
 
-    # IS /tmp correctly configured
+    # Is /tmp correctly configured
     result['tmp directory'] = check_tmp_directory()
 
     return result
 
 
-def check_requirements_darwin():
+def check_requirements_darwin() -> dict:
+    """
+    This is a placeholder for MacOS requirements check.
+    It is used mostly when developing for now.
+    :return: a dictionary with each requirement as key and True (met) or False (not met) as value
+    :raises: ProvisioningException until t is supported.
+    """
     # TODO: Fix this
-    return {'one': True, 'two': True}
-    # raise ProvisioningException("MacOS (Darwin) is not supported.")
+    # return {'one': True, 'two': True}
+    raise ProvisioningException("MacOS (Darwin) is not supported.")
 
 
 def request(
@@ -310,48 +339,16 @@ def request(
     return response
 
 
-def get_auth_uri(api_uri):
-    url = "https://{}/auth-uri".format(api_uri)
-    method = "GET"
-    response = request(
-        url=url,
-        method=method
-    )
-
-    if response.status == 200:
-        return response.json().get('auth-uri')
-    else:
-        return None
-
-
-def get_app_token(cognito_domain, client_id, client_secret):
-    url = "https://{}/oauth2/token".format(cognito_domain)
-    method = "POST"
-    b64_auth = 'Basic {}'.format(b64encode(bytes("{}:{}".format(client_id, client_secret), "ascii")).decode("ascii"))
-    headers = {'Content-Type': "application/x-www-form-urlencoded", 'Authorization': b64_auth}
-    params = None
-    data_as_json = False
-    data = {
-        'grant_type': 'client_credentials',
-        'scope': 'ggInstallerRS/request'
-    }
-
-    response = request(
-        url=url,
-        data=data,
-        params=params,
-        headers=headers,
-        method=method,
-        data_as_json=data_as_json
-    )
-
-    if response.status == 200:
-        return response.json().get('access_token')
-    else:
-        return None
-
-
-def request_provisioning(api_uri, token, serial_number, thing_name, user_name):
+def request_provisioning(api_uri: str, token: str, serial_number: str, thing_name: str, user_name: str) -> str:
+    """
+    Calls the API to initiate a new provisioning request.
+    :param api_uri: API Gateway endpoint (without https://)
+    :param token: Cognito Access Token
+    :param serial_number: Identifier of the Device, like a serial number
+    :param thing_name: The name of the IoT Thing to create
+    :param user_name: The username of the person initiating the provisioning
+    :return: The Provisioning Request UUID
+    """
     url = "https://{}{}".format(api_uri, API_RESOURCE_REQUEST_CREATE)
     method = "GET"
     headers = {'Authorization': token}
@@ -369,10 +366,20 @@ def request_provisioning(api_uri, token, serial_number, thing_name, user_name):
     else:
         logger.critical("Error when requesting provisioning:")
         logger.critical(response)
-        return None
+        return ""
 
 
-def update_provisioning_request_status(token, api_uri, transaction_id, device_id, new_status):
+def update_provisioning_request_status(token: str, api_uri: str, transaction_id: str, device_id: str,
+                                       new_status: str) -> str:
+    """
+    Attempts to change the status of an existing provisioning request on the backend.
+    :param token: Cognito Access Token
+    :param api_uri: API Gateway endpoint (without https://)
+    :param transaction_id: The Provisioning Request UUID
+    :param device_id: Identifier of the Device, like a serial number
+    :param new_status: Name of the new status (must be member of the 'Status' class)
+    :return: the new status value if success or emtpy string
+    """
     url = "https://{}{}".format(api_uri, API_RESOURCE_REQUEST_UPDATE)
     method = "GET"
     headers = {'Authorization': token}
@@ -390,18 +397,19 @@ def update_provisioning_request_status(token, api_uri, transaction_id, device_id
     else:
         logger.critical("Error when requesting provisioning:")
         logger.critical(response)
-        return None
+        return ""
 
 
-def is_request_allowed(transaction_id, device_id, api_uri, token, poll_period=60, timeout=2700):
+def is_request_allowed(transaction_id: str, device_id: str, api_uri: str, token: str, poll_period: int = 30,
+                       timeout: int = 2700) -> bool:
     """
-    This is a blocking function
+    WARNING: This is a blocking function until it succeeds or times-out
     Periodically polls the Provisioning Request status until it is allowed or denied.
     Times out after the set parameter or if the token expires. 
-    :param str transaction_id: UUID string returned when creating the request
-    :param str device_id:  The deviceId
-    :param str api_uri: The base URI for the API
-    :param str token: The access token for contacting the API
+    :param str transaction_id: UUID returned when creating the request
+    :param str device_id:  Identifier of the Device, like a serial number
+    :param str api_uri: API Gateway endpoint (without https://)
+    :param str token: Cognito Access Token
     :param int poll_period: how frequently to check the status
     :param int timeout: Time after which the provisioning attempt is aborted
     :return: True if the request is allowed or False otherwise
@@ -444,8 +452,16 @@ def is_request_allowed(transaction_id, device_id, api_uri, token, poll_period=60
             return False
 
 
-def get_gg_installer(url=URL_GREENGRASS_NUCLEUS_DL, zip_dest=GG_ZIP_DEST_DIR,
-                     zip_filename=GG_ZIP_DEST_FILE, unzip_dir=GG_UNZIP_DEST_DIR):
+def get_gg_installer(url: str = URL_GREENGRASS_NUCLEUS_DL, zip_dest: str = GG_ZIP_DEST_DIR,
+                     zip_filename: str = GG_ZIP_DEST_FILE, unzip_dir: str = GG_UNZIP_DEST_DIR) -> None:
+    """
+    Downloads the AWS Greengrass Installer archive and unzip it at specified location
+    :param url: where to download the installer archive from
+    :param zip_dest: where to store the archive once downloaded
+    :param zip_filename: name of the zip file
+    :param unzip_dir: where to unzip the archive
+    :return: None
+    """
     try:
         zip_dest = os.path.abspath(zip_dest)
         logger.debug("Creating directory: {}".format(zip_dest))
@@ -461,6 +477,9 @@ def get_gg_installer(url=URL_GREENGRASS_NUCLEUS_DL, zip_dest=GG_ZIP_DEST_DIR,
 
 
 class SslCreds(object):
+    """
+    Faciliy Class to generate and manage SSL credentials
+    """
     CN = SSL_CN
     OU = SSL_OU
     O = SSL_O
@@ -471,7 +490,11 @@ class SslCreds(object):
     AMZ_CA_URL = AMAZON_ROOT_CA_URL
     AMZ_CA_NAME = "AmazonRootCA1.pem"
 
-    def __init__(self, dest_directory, base_name):
+    def __init__(self, dest_directory: str, base_name: str) -> None:
+        """
+        :param dest_directory: where to store the secrets
+        :param base_name: a common prefix used for all the files generated.
+        """
         self.os_type = platform.system()
         if self.os_type not in self.__SUPPORTED_OS:
             self._unsupported_os()
@@ -483,44 +506,60 @@ class SslCreds(object):
         self.ca_path = os.path.join(self.dest_dir, self.AMZ_CA_NAME)
 
     @property
-    def certificate_file_path(self):
+    def certificate_file_path(self) -> str:
         return self.crt_path
 
     @property
-    def private_key_path(self):
+    def private_key_path(self) -> str:
         return self.key_path
 
     @property
-    def root_ca_path(self):
+    def root_ca_path(self) -> str:
         return self.ca_path
 
-    def _get_dn_string(self):
+    def _get_dn_string(self) -> str:
+        """
+        Formats a string corresponding to the DN
+        :return: nothing
+        """
         return "/CN={}/OU={}/O={}/L={}/ST={}/C={}".format(self.CN, self.OU, self.O, self.L, self.ST, self.C)
 
-    def create_private_key_and_csr(self):
-        '''
-        Also download teh Amazon Root CA
-        :return:
-        '''
+    def create_private_key_and_csr(self) -> None:
+        """
+        Also downloads the Amazon Root CA
+        :return: Nothing
+        """
         if self.os_type not in self.__SUPPORTED_OS:
             self._unsupported_os()
 
         if self.os_type in ['Linux', 'Darwin']:
             self._create_private_key_and_csr_linux()
-        self.get_amazon_root_ca()
+        self.download_amazon_root_ca()
 
-    def get_amazon_root_ca(self):
+    def download_amazon_root_ca(self) -> None:
+        """
+        Downloads and stores the Amazon Root CA
+        :return: nothing
+        """
         if not os.path.isfile(self.ca_path):
             urllib.request.urlretrieve(url=self.AMZ_CA_URL, filename=self.ca_path)
             os.chmod(path=self.csr_path, mode=0o400)
 
-    def get_csr(self):
+    def get_csr(self) -> str:
+        """
+        Reads the CSR from a file and returns it as a string
+        :return: CSR string
+        """
         if not os.path.isfile(self.csr_path):
-            return None
+            return ""
         with open(self.csr_path, 'r') as f:
             return f.read()
 
-    def _create_private_key_and_csr_linux(self):
+    def _create_private_key_and_csr_linux(self) -> None:
+        """
+        Creates the Private Key and CSR files
+        :return: nothing
+        """
         try:
             logger.debug("Creating directory: {}".format(self.dest_dir))
             os.makedirs(name=self.dest_dir, mode=0o700, exist_ok=True)
@@ -539,10 +578,12 @@ class SslCreds(object):
     def _unsupported_os(self):
         raise ProvisioningException("System detected: {}. Only Linux platforms supported.".format(self.os_type))
 
-    def save_crt(self, crt):
+    def save_crt(self, crt: str) -> None:
         '''
-        Removes the file is crt is None
-        :param crt:
+        Saves CRT file and position file mode accordingly.
+        Removes an older CRT file if existing before storing the new one.
+        If crt is None existing CRT will be deleted.
+        :param crt: the CRT as a string
         :return: Nothing
         '''
         if os.path.isfile(self.crt_path):
@@ -554,7 +595,16 @@ class SslCreds(object):
             os.chmod(path=self.crt_path, mode=0o400)
 
 
-def provision_thing(device_id, transaction_id, csr, token, api_uri):
+def provision_thing(device_id: str, transaction_id: str, csr: str, token: str, api_uri: str) -> typing.Any:
+    """
+    Calls the API to provision a new Thing in IoT Core, providing a CSR and expecting a signed certificate in return.
+    :param device_id: Identifier of the Device, like a serial number
+    :param transaction_id: UUID returned when creating the request
+    :param csr: the CSR as string
+    :param token: Cognito Access Token
+    :param api_uri: API Gateway endpoint (without https://)
+    :return: Generally a dictionary containing the IoT Core provisioning response
+    """
     url = "https://{}{}".format(api_uri, API_RESOURCE_REGISTER_THING)
     method = "POST"
     headers = {'Content-Type': "application/json", 'Authorization': token}
@@ -564,7 +614,7 @@ def provision_thing(device_id, transaction_id, csr, token, api_uri):
         'CSR': csr,
         'deviceId': device_id,
         'transactionId': transaction_id
-    }
+    }  # 'provisioningTemplate' also supported
 
     response = request(
         url=url,
@@ -580,14 +630,22 @@ def provision_thing(device_id, transaction_id, csr, token, api_uri):
     else:
         logger.critical("Error when registering Thing:")
         logger.critical(response)
-        return None
+        return {}
 
 
-def get_greengrass_config(token, api_uri, transaction_id, device_id):
+def get_greengrass_config(token: str, api_uri: str, transaction_id: str, device_id: str):
+    """
+    Calls the API to get the customised Greengrass Configuration template. Expects the template to be Bse64 encoded.
+    :param token: Cognito Access Token
+    :param api_uri: API Gateway endpoint (without https://)
+    :param transaction_id: UUID returned when creating the request
+    :param device_id: Identifier of the Device, like a serial number
+    :return: Generally a dictionary containing the IoT Core provisioning response
+    """
     url = "https://{}{}".format(api_uri, API_RESOURCE_GREENGRASS_CONFIG)
     method = "GET"
     headers = {'Authorization': token, "Accept": "text/plain"}
-    params = {'transactionId': transaction_id, 'deviceId': device_id}
+    params = {'transactionId': transaction_id, 'deviceId': device_id}  # 'greengrassConfigTemplate' also supported
 
     response = request(
         url=url,
@@ -604,7 +662,11 @@ def get_greengrass_config(token, api_uri, transaction_id, device_id):
         return None
 
 
-def get_greengrass_version():
+def get_greengrass_version() -> str:
+    """
+    Determines the version of Greengrass by atempting to run its binary
+    :return: The version returned by the binary or an emtpy string
+    """
     try:
         ggi_bin = "{}/lib/Greengrass.jar".format(GG_UNZIP_DEST_DIR)
         gg_ver = subprocess.check_output(['java', '-jar', ggi_bin, '--version'], stderr=subprocess.STDOUT)
@@ -612,13 +674,19 @@ def get_greengrass_version():
         if match:
             return match[0]
         else:
-            return None
+            return ""
     except Exception as e:
-        logger.critical("Exception when checking Greenrass installer version:\n {}".format(e))
-        return None
+        logger.critical("Exception when checking Greengrass installer version:\n {}".format(e))
+        return ""
 
 
-def populate_greengrass_config(ssl_creds, template):
+def populate_greengrass_config(ssl_creds: SslCreds, template: str) -> str:
+    """
+
+    :param ssl_creds: The Class instance holding the SSL credentials
+    :param template: The greengrass configuration template as a string
+    :return: The updated template
+    """
     template = template.replace("$system.certificateFilePath$", ssl_creds.certificate_file_path)
     template = template.replace("$system.privateKeyPath$", ssl_creds.private_key_path)
     template = template.replace("$system.rootCaPath$", ssl_creds.root_ca_path)
@@ -630,7 +698,14 @@ def populate_greengrass_config(ssl_creds, template):
     return template
 
 
-def save_greengrass_config(cfg, directory=GG_UNZIP_DEST_DIR, file_name=GG_CONFIG_FILE_NAME):
+def save_greengrass_config(cfg: str, directory: str = GG_UNZIP_DEST_DIR, file_name: str = GG_CONFIG_FILE_NAME) -> str:
+    """
+    Stores the Greegrass configuration template at the defined location
+    :param cfg: Configuration template fully populated
+    :param directory: Where to store teh configuration file
+    :param file_name: How to call the configuration file
+    :return: The path/name of the configuration file
+    """
     gg_config_path = os.path.join(os.path.abspath(directory), file_name)
     logger.debug("Saving Greengrass config to: {}".format(gg_config_path))
     with open(gg_config_path, "w") as f:
@@ -639,11 +714,18 @@ def save_greengrass_config(cfg, directory=GG_UNZIP_DEST_DIR, file_name=GG_CONFIG
     return gg_config_path
 
 
-def install_greengrass(config_path):
-    # using subprocess doesn't work!!!
+def install_greengrass(config_path: str, gg_root: str = GG_ROOT_PATH, installer_path: str = GG_UNZIP_DEST_DIR) -> int:
+    """
+    Runs the greengrass installer.
+    WARNING: using subprocess didn't work, so folded back to os.system method!!!
+    :param config_path:
+    :param gg_root: Root path for Greengrass V2 application
+    :param installer_path: Where to find the installer (home) folder. Generally the unzip directory.
+    :return: The code returned by the OS after running the installer.
+    """
     command = 'java -Droot="{}" -Dlog.store=FILE -jar {}/lib/Greengrass.jar --init-config {} ' \
               '--component-default-user ggc_user:ggc_group ' \
-              '--setup-system-service true'.format(GG_ROOT_PATH, GG_UNZIP_DEST_DIR, config_path)
+              '--setup-system-service true'.format(gg_root, installer_path, config_path)
     return os.system(command)
 
 
@@ -653,12 +735,31 @@ THING_NAME = "$THING_NAME$"
 DEVICE_SERIAL = "$DEVICE_SERIAL$"
 API_URI = "$API_URI$"
 TOKEN = "$TOKEN$"
-# INSERT CONSTANTS BELOW
-
 # DO NOT CHANGE CONSTANTS ABOVE
 
 
 if __name__ == "__main__":
+    """
+    Overview of the sequence of operations:
+    * Check that the host meets the Greengrass V2 (software) requirements: 
+      https://docs.aws.amazon.com/greengrass/v2/developerguide/setting-up.html#installation-requirements
+    * Initiate a new provisioning request to the backend
+    * Wait for the provisioning request to be allowed by the operator
+    * Download Greengrass V2 installer archive in its latest version
+    * Generate SSL credentials
+    * Request provisioning to IoT Core with CSR
+    * Store signed certificate
+    * Get Greengrass configuration template from backend (partially filled-in)
+    * Finish filling-in the configuration template and store it on disk
+    * Launch the Greengrass installer
+    * Be polite and say goodbye
+    
+    Notes:
+    * The IoT Thing provisioning is defined by a provisioning template located in S3.
+      The template to use can be specified in the API call with the body element 'provisioningTemplate'.  
+    * The Greengrass configuration template is also located in S3. 
+      The template to use can be specified in the API call with the query string parameter 'greengrassConfigTemplate'.
+    """
     try:
         # Check if requirements are met
         try:
@@ -671,9 +772,8 @@ if __name__ == "__main__":
             logger.critical("Some requirements are missing :\n{}".format(missing))
             raise AbortProvisioning("Hosting system requirements are not met.")
 
-        # Get a time-limited Application Token
+        # Get a time-limited Application Token - removed when the token got embedded in the downloaded script
         app_token = TOKEN
-
 
         # Send a request to provision the device and store the response elements
         request_id = request_provisioning(
@@ -703,7 +803,7 @@ if __name__ == "__main__":
                                                          new_status=new_status.name)
         if new_status.name != resp_status:
             raise FailProvisioning("Status could not be updated to {}.".format(new_status.name))
-        # Download Greengrass package and extract it
+        # Download Greengrass archive and extract it
         try:
             get_gg_installer()
         except Exception:
@@ -716,6 +816,8 @@ if __name__ == "__main__":
             )
             creds.create_private_key_and_csr()
             csr = creds.get_csr()
+            if not csr:
+                raise ProvisioningException("CSR is empty.")
         except Exception:
             raise FailProvisioning("Could not create Key and CSR. Provisioning Failed.")
         # Request Thing Provisioning from CSR
