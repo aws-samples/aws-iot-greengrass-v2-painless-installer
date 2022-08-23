@@ -167,7 +167,7 @@ def get_java_version() -> int:
         return 0
 
 
-def get_glibc_version() -> tuple[int, int]:
+def get_glibc_version() -> typing.Tuple[int, int]:
     """
     Retrieves the version of glic
     :return: (major, minor) and (0,0) if not installed
@@ -232,7 +232,7 @@ def check_requirements_linux() -> dict:
     for req in required:
         result[req] = subprocess.call(['which', req], stdout=subprocess.DEVNULL) == 0
 
-    result['java'] = get_java_version() < java_min
+    result['java'] = get_java_version() >= java_min
 
     glibc_ver = get_glibc_version()
     result['glibc'] = glibc_ver[0] > glibc_min[0] or (glibc_ver[0] == glibc_min[0] and glibc_ver[1] >= glibc_min[1])
