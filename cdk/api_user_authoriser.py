@@ -1,3 +1,5 @@
+import typing
+
 from constructs import Construct
 from aws_cdk import (
     Duration,
@@ -9,14 +11,20 @@ from cdk.environment_variables import RuntimeEnvVars
 
 class ApiUserAuthorizer(Construct):
 
-    def __init__(self, scope: Construct, id: str, env: RuntimeEnvVars, **kwargs) -> None:
+    def __init__(self, scope: Construct, id: str, env: RuntimeEnvVars,
+                 runtime: _lambda.Runtime, architecture: _lambda.Architecture,
+                 layers: typing.Optional[typing.Sequence[_lambda.ILayerVersion]],
+                 **kwargs) -> None:
         super().__init__(scope, id, **kwargs)
 
         self._handler = _lambda.Function(
             self, "UserAuthorizerLambda",
-            runtime=_lambda.Runtime.PYTHON_3_9,
+            runtime=runtime,
+            architecture=architecture,
+            layers=layers,
             handler='ggi_apigw_user_authoriser_lambda.handler',
-            code=_lambda.Code.from_asset('cloud/lambdas'),
+            code=_lambda.Code.from_asset('cloud/lambdas',
+                                         exclude=["**", "!ggi_apigw_user_authoriser_lambda.py"]),
             environment={
                 env.log_level.name: env.log_level.value,
                 env.cognito_pool_id.name: env.cognito_pool_id.value,

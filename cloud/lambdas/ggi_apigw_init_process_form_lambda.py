@@ -44,7 +44,7 @@ S3_RESOURCES = os.environ.get("S3_RESOURCES_BUCKET")
 if not S3_RESOURCES:
     raise Exception("Environment variable S3_RESOURCES_BUCKET missing")
 S3_OUTPUTS = os.environ.get("S3_DOWNLOAD_BUCKET")
-if not S3_RESOURCES:
+if not S3_OUTPUTS:
     raise Exception("Environment variable S3_DOWNLOADS_BUCKET missing")
 INSTALLER_SCRIPT = os.environ.get("INSTALLER_SCRIPT_NAME", "install_gg.py")
 

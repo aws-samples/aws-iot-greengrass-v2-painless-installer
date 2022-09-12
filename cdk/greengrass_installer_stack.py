@@ -1,6 +1,7 @@
 from aws_cdk import (
     Duration,
     Stack,
+    RemovalPolicy,
     aws_cognito as cognito,
     aws_apigateway as apigw,
     aws_lambda as _lambda,
@@ -11,6 +12,8 @@ from constructs import Construct
 
 from cdk.environment_variables import RuntimeEnvVars
 from cdk.api_user_authoriser import ApiUserAuthorizer
+from cdk.s3_setup import S3Setup
+from cdk.dynamodb_setup import DynamodbSetup
 
 
 class GreengrassInstallerStack(Stack):
@@ -18,7 +21,28 @@ class GreengrassInstallerStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
+        # Set a few constants to simplify code updates
+        LAMBDA_ARCH = _lambda.Architecture.X86_64
+        LAMBDA_RUNTIME = _lambda.Runtime.PYTHON_3_9
+
         env = RuntimeEnvVars()
+
+        # Define the common Layer for all the Lambda
+        lambda_common_layer = _lambda.LayerVersion(
+            self, "LambdaUtils",
+            removal_policy=RemovalPolicy.DESTROY,
+            compatible_architectures=[LAMBDA_ARCH],
+            compatible_runtimes=[LAMBDA_RUNTIME],
+            code=_lambda.Code.from_asset('cloud/lambdas',
+                                         exclude=["**", "!ggi_lambda_utils.py"]),
+            description="A set of helper functions for the Greengrass installer"
+        )
+
+        # Deploy S3 resources
+        s3_res = S3Setup(self, 'S3Setup', env=env)
+
+        # Create DynamoDB Table and indexes
+        ddb = DynamodbSetup(self, "ProvisioningDB", env=env)
 
         # Because of https://github.com/aws/aws-cdk/issues/10878 a cloudWatch Role mus tbe created maunally
         # for the API to be able to log to CloudWatch
@@ -198,7 +222,10 @@ class GreengrassInstallerStack(Stack):
                                                             )
 
         api_auth_custom = ApiUserAuthorizer(self, "UserLambdaAuthorizer",
-                                            env=env)
+                                            env=env,
+                                            runtime=LAMBDA_RUNTIME,
+                                            architecture=LAMBDA_ARCH,
+                                            layers=[lambda_common_layer])
 
         # Set environment variables that can now be set
         env.cognito_pool_id.value = cognito_pool.user_pool_id
@@ -209,9 +236,12 @@ class GreengrassInstallerStack(Stack):
         # Add GET method to manage/init which will redirect to the login page - Must not require Auth
         redirect_auth_lambda = _lambda.Function(
             self, "RedirectAuthLambda",
-            runtime=_lambda.Runtime.PYTHON_3_9,
+            runtime=LAMBDA_RUNTIME,
+            architecture=LAMBDA_ARCH,
+            layers=[lambda_common_layer],
             handler="ggi_apigw_redirect_auth_for_init_form_lambda.handler",
-            code=_lambda.Code.from_asset('cloud/lambdas'),
+            code=_lambda.Code.from_asset('cloud/lambdas',
+                                         exclude=["**", "!ggi_apigw_redirect_auth_for_init_form_lambda.py"]),
             environment={
                 env.log_level.name: env.log_level.value,
                 env.cognito_pool_operator_client_id.name: env.cognito_pool_operator_client_id.value,
@@ -224,9 +254,12 @@ class GreengrassInstallerStack(Stack):
         # Add GET method to init/form to fetch the form - Must not require Auth
         get_form_lambda = _lambda.Function(
             self, "GetFormLambda",
-            runtime=_lambda.Runtime.PYTHON_3_9,
+            runtime=LAMBDA_RUNTIME,
+            architecture=LAMBDA_ARCH,
+            layers=[lambda_common_layer],
             handler="ggi_apigw_init_get_form_lambda.handler",
-            code=_lambda.Code.from_asset('cloud/lambdas')
+            code=_lambda.Code.from_asset('cloud/lambdas',
+                                         exclude=["**", "!ggi_apigw_init_get_form_lambda.py"])
         )
         get_form_integration = apigw.LambdaIntegration(get_form_lambda, proxy=True)
         api_res_manage_init_form.add_method(
@@ -238,9 +271,12 @@ class GreengrassInstallerStack(Stack):
         # Add POST method to init/form for process the form data
         process_form_lambda = _lambda.Function(
             self, "ProcessFormLambda",
-            runtime=_lambda.Runtime.PYTHON_3_9,
+            runtime=LAMBDA_RUNTIME,
+            architecture=LAMBDA_ARCH,
+            layers=[lambda_common_layer],
             handler="ggi_apigw_init_process_form_lambda.handler",
-            code=_lambda.Code.from_asset('cloud/lambdas')
+            code=_lambda.Code.from_asset('cloud/lambdas',
+                                         exclude=["**", "!ggi_apigw_init_process_form_lambda.py"])
         )
         process_form_integration = apigw.LambdaIntegration(process_form_lambda, proxy=True)
         api_res_manage_init_form.add_method(
@@ -254,9 +290,12 @@ class GreengrassInstallerStack(Stack):
         # Add GET method to provision/greengrass-config
         get_ggconfig_lambda = _lambda.Function(
             self, "GetGgConfigLambda",
-            runtime=_lambda.Runtime.PYTHON_3_9,
+            runtime=LAMBDA_RUNTIME,
+            architecture=LAMBDA_ARCH,
+            layers=[lambda_common_layer],
             handler="ggi_apigw_provision_greengrass_config_lambda.handler",
-            code=_lambda.Code.from_asset('cloud/lambdas')
+            code=_lambda.Code.from_asset('cloud/lambdas',
+                                         exclude=["**", "!ggi_apigw_provision_greengrass_config_lambda.py"]),
         )
         get_ggconfig_integration = apigw.LambdaIntegration(get_ggconfig_lambda, proxy=True)
         api_res_provision_gg.add_method(
@@ -269,3 +308,6 @@ class GreengrassInstallerStack(Stack):
             authorizer=api_auth_cognito
 
         )
+
+        # TODO: IoT Core config - roles & Policies
+        # TODO: Environment variables on all Lambdas
