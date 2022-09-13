@@ -7,5 +7,5 @@ pipdeptree==2.3.1
 
 # AWS CDK
 aws-cdk-lib==2.41.0
-constructs==10.1.97
+constructs==10.1.101
 pytest==7.1.3

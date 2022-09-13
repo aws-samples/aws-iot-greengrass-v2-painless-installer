@@ -5,7 +5,9 @@
       "app.py",
       "cdk/**",
       "cloud/lambdas/*",
-      "edge/install_gg.py"
+      "edge/install_gg.py",
+      "iot/gg_configs/*",
+      "iot/iot_templates/*"
     ],
     "exclude": [
       "README.md",

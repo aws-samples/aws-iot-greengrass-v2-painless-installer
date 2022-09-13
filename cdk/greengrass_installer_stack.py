@@ -2,6 +2,7 @@ from aws_cdk import (
     Duration,
     Stack,
     RemovalPolicy,
+    CfnResource,
     aws_cognito as cognito,
     aws_apigateway as apigw,
     aws_lambda as _lambda,
@@ -175,34 +176,27 @@ class GreengrassInstallerStack(Stack):
                                                group_name="GreengrassProvisioningOperators"
                                                )
 
-        # FIXME: Set callback URL correctly
-        cognito_pool_client_operator = cognito_pool.add_client(
-            "operator",
-            access_token_validity=Duration.hours(1),
-            auth_flows=cognito.AuthFlow(
-                user_password=True
-            ),
+        # This User Poll Client is created from a CFN Resource to avoid circular dependency between
+        # Cognito Pool and SPI Gateway. By setting this Pool Client separately we can inform CF to wait until
+        # API Gateway is deployed, which itself requires the Cognito Pool to be deployed.
+        cognito_pool_client_operator = cognito.CfnUserPoolClient(
+            self, "operator",
+            user_pool_id=cognito_pool.user_pool_id,
+            access_token_validity=1,
+            allowed_o_auth_flows=["code"],
+            allowed_o_auth_flows_user_pool_client=True,
+            allowed_o_auth_scopes=["email", "openid"],
+            callback_ur_ls=[api.url + api_res_manage_init_form.path.lstrip("/")+"/",
+                            api.url + api_res_manage_request.path.lstrip("/") + "/"],
+            client_name="operator",
+            explicit_auth_flows=["ALLOW_USER_PASSWORD_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"],
             generate_secret=False,
-            id_token_validity=Duration.hours(1),
-            o_auth=cognito.OAuthSettings(
-                flows=cognito.OAuthFlows(
-                    authorization_code_grant=True
-                ),
-                callback_urls=["https://somwhere.com",
-                               "https://somehereelse.com",
-                               ],
-                scopes=[cognito.OAuthScope.EMAIL, cognito.OAuthScope.OPENID],
-            ),
-            refresh_token_validity=Duration.hours(1),
-            user_pool_client_name="operator"
+            id_token_validity=1,
+            prevent_user_existence_errors="ENABLED",
+            token_validity_units=cognito.CfnUserPoolClient.TokenValidityUnitsProperty(refresh_token="hours"),
+            refresh_token_validity=1
         )
-        cognito_pool_client_operator.apply_removal_policy(RemovalPolicy.DESTROY)
-
-        '''
-        [api.url + api_res_manage_init_form.path,
-                               api.url + api_res_manage_request.path,
-                               ]
-        '''
+        cognito_pool_client_operator.add_depends_on(api.node.default_child)
 
         cognito_pool_client_gginstaller = cognito_pool.add_client(
             "gginstaller",
@@ -238,7 +232,7 @@ class GreengrassInstallerStack(Stack):
         # Set environment variables that can now be set
         env.cognito_pool_id.value = cognito_pool.user_pool_id
         env.cognito_pool_url.value = cognito_domain.base_url()
-        env.cognito_pool_operator_client_id.value = cognito_pool_client_operator.user_pool_client_id
+        env.cognito_pool_operator_client_id.value = cognito_pool_client_operator.client_name
         env.cognito_pool_gginstaller_client_id.value = cognito_pool_client_gginstaller.user_pool_client_id
 
         # Add GET method to manage/init which will redirect to the login page - Must not require Auth
