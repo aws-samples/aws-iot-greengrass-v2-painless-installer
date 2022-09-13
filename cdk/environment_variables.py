@@ -44,12 +44,25 @@ class RuntimeEnvVars(object):
     s3_bucket_scripts = _EnvVar('S3_RESOURCES_BUCKET', '')
     installer_script_name = _EnvVar('INSTALLER_SCRIPT_NAME', 'install_gg.py')
     s3_downloads_bucket = _EnvVar('S3_DOWNLOAD_BUCKET', '')
+    s3_greengrass_artifacts_bucket = _EnvVar('S3_GREENGRASS_ARTIFACTS_BUCKET', '')
     # DynamoDB
     dynamodb_table_name = _EnvVar('DYNAMO_TABLE_NAME', '')
     dynamodb_idx_dev_trans = _EnvVar('DYNAMO_IDX_DEV_TRANS', '')
     dynamodb_idx_thing_trans = _EnvVar('DYNAMO_IDX_THING_TRANS', '')
     dynamodb_idx_trans_dev = _EnvVar('DYNAMO_IDX_TRANS_DEV', '')
+    # IoT Core Setup
+    device_policy_name = _EnvVar('DEVICE_POLICY_NAME', '')
+    token_exchange_role_name = _EnvVar('TOKEN_EXCHANGE_ROLE_NAME', '')
+    token_exchange_role_alias = _EnvVar('TOKEN_EXCHANGE_ROLE_ALIAS', '')
+    token_exchange_role_alias_policy_name = _EnvVar('TOKEN_EXCHANGE_ROLE_ALIAS_POLICY_NAME', '')
 
+    def __repr__(self):
+        d = {}
+        for attr in dir(self):
+            if not attr.startswith("__") and isinstance(self.__class__.__dict__[attr], _EnvVar):
+                v = self.__class__.__dict__[attr]
+                d[v.name] = v.value
+        return str(d)
 
 
 # Below is a list of Environment Variables that must be set prior to deploying the CDK.

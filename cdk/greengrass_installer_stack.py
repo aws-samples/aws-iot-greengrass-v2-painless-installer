@@ -14,18 +14,18 @@ from cdk.environment_variables import RuntimeEnvVars
 from cdk.api_user_authoriser import ApiUserAuthorizer
 from cdk.s3_setup import S3Setup
 from cdk.dynamodb_setup import DynamodbSetup
+from cdk.iot_core_setup import IotCoreSetup
 
 
 class GreengrassInstallerStack(Stack):
 
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    def __init__(self, scope: Construct, construct_id: str,
+                 env: RuntimeEnvVars, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         # Set a few constants to simplify code updates
         LAMBDA_ARCH = _lambda.Architecture.X86_64
         LAMBDA_RUNTIME = _lambda.Runtime.PYTHON_3_9
-
-        env = RuntimeEnvVars()
 
         # Define the common Layer for all the Lambda
         lambda_common_layer = _lambda.LayerVersion(
@@ -43,6 +43,9 @@ class GreengrassInstallerStack(Stack):
 
         # Create DynamoDB Table and indexes
         ddb = DynamodbSetup(self, "ProvisioningDB", env=env)
+
+        # Setup IoT Core roles and policies
+        iot_core = IotCoreSetup(self, "IoTCoreSetup", env=env, gg_artifacts_bucket=s3_res.gg_artifacts_bucket)
 
         # Because of https://github.com/aws/aws-cdk/issues/10878 a cloudWatch Role mus tbe created maunally
         # for the API to be able to log to CloudWatch
@@ -144,7 +147,8 @@ class GreengrassInstallerStack(Stack):
         cognito_pool = cognito.UserPool(self, "GGIPool",
                                         user_pool_name="ggipool",
                                         sign_in_aliases={'username': True, 'email': True},
-                                        self_sign_up_enabled=False
+                                        self_sign_up_enabled=False,
+                                        removal_policy=RemovalPolicy.DESTROY
                                         )
 
         cognito_domain = cognito_pool.add_domain(
@@ -171,6 +175,7 @@ class GreengrassInstallerStack(Stack):
                                                group_name="GreengrassProvisioningOperators"
                                                )
 
+        # FIXME: Set callback URL correctly
         cognito_pool_client_operator = cognito_pool.add_client(
             "operator",
             access_token_validity=Duration.hours(1),
@@ -191,6 +196,8 @@ class GreengrassInstallerStack(Stack):
             refresh_token_validity=Duration.hours(1),
             user_pool_client_name="operator"
         )
+        cognito_pool_client_operator.apply_removal_policy(RemovalPolicy.DESTROY)
+
         '''
         [api.url + api_res_manage_init_form.path,
                                api.url + api_res_manage_request.path,
@@ -215,6 +222,7 @@ class GreengrassInstallerStack(Stack):
             refresh_token_validity=Duration.hours(1),
             user_pool_client_name="gginstaller"
         )
+        cognito_pool_client_gginstaller.apply_removal_policy(RemovalPolicy.DESTROY)
 
         # Define the authorizers for this API
         api_auth_cognito = apigw.CognitoUserPoolsAuthorizer(self, "CognitoAuthorizer",
