@@ -22,13 +22,13 @@ class ApiUserAuthorizer(Construct):
             runtime=runtime,
             architecture=architecture,
             layers=layers,
-            handler='ggi_apigw_user_authoriser_lambda.handler',
+            handler='ggi_apigw_user_authoriser_lambda.lambda_handler',
             code=_lambda.Code.from_asset('cloud/lambdas',
                                          exclude=["**", "!ggi_apigw_user_authoriser_lambda.py"]),
             environment={
                 env.log_level.name: env.log_level.value,
                 env.cognito_pool_id.name: env.cognito_pool_id.value,
-                env.cognito_pool_operator_client_id.name: env.cognito_pool_operator_client_id.value,
+                env.cognito_pool_operator_client_name.name: env.cognito_pool_operator_client_name.value,
                 env.cognito_pool_url.name: env.cognito_pool_url.value,
             },
         )

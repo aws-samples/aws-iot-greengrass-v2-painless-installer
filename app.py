@@ -14,5 +14,5 @@ app = cdk.App()
 GreengrassInstallerStack(app, "GreengrassInstallerStack", env=my_env)
 
 app.synth()
-
+print("Runtime environment variables: \n" + str(my_env))
 

@@ -375,3 +375,20 @@ def get_user_pool_secret(cog_client: botoclient, user_pool_id: str, client_id: s
         logger.debug("Client ID '{}' doesn't have any secret".format(client_id))
     return secret
 
+
+def get_cognito_client_id_from_name(cog_client: botoclient, pool_id: str, name: str) -> str:
+
+    """
+    Retrieve the Cognito Client ID from the Cognito User Pool Name
+    :param cog_client: The Boto3 client for Cognito
+    :param name:
+    :param pool_id:
+    :return: str, empty of failed
+    """
+    clients = cog_client.list_user_pool_clients(UserPoolId=pool_id)
+    cid = ''
+    for client in clients['UserPoolClients']:
+        if client.get('ClientName') == name:
+            cid = client['ClientId']
+            break
+    return cid

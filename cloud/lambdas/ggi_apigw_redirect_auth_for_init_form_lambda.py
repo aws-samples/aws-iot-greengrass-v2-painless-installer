@@ -20,6 +20,7 @@ The Authorization Code returned by Cognito afer log-in will be embedded in the F
 allow the Form resource to exchange eh code for a token in order to authenticate the user.
 If you know a better way to do a two-step auth without a client app, let me know: lautip@amazon.com
 """
+import boto3
 # Import the helper functions from the layer
 from ggi_lambda_utils import *
 
@@ -27,14 +28,21 @@ from ggi_lambda_utils import *
 COG_URL = os.environ.get("COGNITO_URL")
 if not COG_URL:
     raise Exception("Environment variable COGNITO_URL missing")
-COG_CID = os.environ.get("COG_CLIENT_ID")
-if not COG_CID:
+COG_C_NAME = os.environ.get("COGNITO_CLIENT_NAME")
+if not COG_C_NAME:
     raise Exception("Environment variable COG_CLIENT_ID missing")
+COG_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID")
+if not COG_USER_POOL_ID:
+    raise Exception("Environment variable COGNITO_USER_POOL_ID missing")
 FORM_RESOURCE = "form/"
 
 
 def lambda_handler(event, context):
-    auth_url = "{0}/login?client_id={1}&response_type=code".format(COG_URL, COG_CID)
+
+    cid = get_cognito_client_id_from_name(cog_client=boto3.client('cognito-idp'),
+                                          pool_id=COG_USER_POOL_ID,
+                                          name=COG_C_NAME)
+    auth_url = "{0}/login?client_id={1}&response_type=code".format(COG_URL, cid)
     redirect = "&redirect_uri=https://{0}{1}/{2}".format(event['requestContext']['domainName'],
                                                          event['requestContext']['path'],
                                                          FORM_RESOURCE)

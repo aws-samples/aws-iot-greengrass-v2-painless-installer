@@ -8,9 +8,11 @@ from aws_cdk import (
     aws_lambda as _lambda,
     aws_logs as logs,
     aws_iam as iam,
-    aws_ses as ses
+    aws_ses as ses,
+    CfnOutput
 )
 from constructs import Construct
+from constructs import DependencyGroup
 
 from cdk.environment_variables import RuntimeEnvVars
 from cdk.api_user_authoriser import ApiUserAuthorizer
@@ -39,8 +41,7 @@ class GreengrassInstallerStack(Stack):
             removal_policy=RemovalPolicy.DESTROY,
             compatible_architectures=[LAMBDA_ARCH],
             compatible_runtimes=[LAMBDA_RUNTIME],
-            code=_lambda.Code.from_asset('cloud/lambdas',
-                                         exclude=["**", "!ggi_lambda_utils.py"]),
+            code=_lambda.Code.from_asset('cloud/layers/utils'),
             description="A set of helper functions for the Greengrass installer"
         )
 
@@ -92,7 +93,6 @@ class GreengrassInstallerStack(Stack):
             ),
             cloud_watch_role=False
         )
-
         '''
         deployment = apigw.Deployment(self, "Deployment", api=api)
         apigw.Stage(self, "test",
@@ -127,7 +127,7 @@ class GreengrassInstallerStack(Stack):
                                                       validate_request_parameters=True, )
         req_validator_all = apigw.RequestValidator(self, "all_validator",
                                                    rest_api=api,
-                                                   request_validator_name="queryStringAndHeadersAndbodyValidator",
+                                                   request_validator_name="queryStringAndHeadersAndBodyValidator",
                                                    validate_request_parameters=True,
                                                    validate_request_body=True
                                                    )
@@ -182,7 +182,7 @@ class GreengrassInstallerStack(Stack):
                                                description="Users allowed to Provision Greengrass devices",
                                                group_name="GreengrassProvisioningOperators"
                                                )
-        env.cognito_group_provisionning.value = users_group.group_name
+        env.cognito_group_provisioning.value = users_group.group_name
 
         cognito_pool_client_gginstaller = cognito_pool.add_client(
             "gginstaller",
@@ -204,6 +204,29 @@ class GreengrassInstallerStack(Stack):
         )
         cognito_pool_client_gginstaller.apply_removal_policy(RemovalPolicy.DESTROY)
 
+        '''
+        cognito_pool_client_operator = cognito_pool.add_client(
+            "operatorClient",
+            access_token_validity=Duration.hours(1),
+            auth_flows=cognito.AuthFlow(user_password=True),
+            generate_secret=False,
+            id_token_validity=Duration.hours(1),
+            o_auth=cognito.OAuthSettings(
+                flows=cognito.OAuthFlows(
+                    authorization_code_grant=True
+                )
+            ),
+            refresh_token_validity=Duration.hours(1),
+            user_pool_client_name="operator"
+        )
+        '''
+
+        # Set environment variables that can now be set
+        env.cognito_pool_id.value = cognito_pool.user_pool_id
+        env.cognito_pool_url.value = cognito_domain.base_url()
+        env.cognito_pool_gginstaller_client_id.value = cognito_pool_client_gginstaller.user_pool_client_id
+        env.cognito_pool_operator_client_name.value = "operator"  # Set here to avoid circular dependency
+
         # Define the authorizers for this API
         api_auth_cognito = apigw.CognitoUserPoolsAuthorizer(self, "CognitoAuthorizer",
                                                             cognito_user_pools=[cognito_pool],
@@ -215,11 +238,6 @@ class GreengrassInstallerStack(Stack):
                                             runtime=LAMBDA_RUNTIME,
                                             architecture=LAMBDA_ARCH,
                                             layers=[lambda_common_layer])
-
-        # Set environment variables that can now be set
-        env.cognito_pool_id.value = cognito_pool.user_pool_id
-        env.cognito_pool_url.value = cognito_domain.base_url()
-        env.cognito_pool_gginstaller_client_id.value = cognito_pool_client_gginstaller.user_pool_client_id
 
         # ### API Endpoints configuration ### #
 
@@ -237,11 +255,12 @@ class GreengrassInstallerStack(Stack):
         api_res_req_status = api_res_req.add_resource("status")
         api_res_req_update = api_res_req.add_resource("update")
 
+
         # This User Poll Client is created from a CFN Resource to avoid circular dependency between
         # Cognito Pool and API Gateway. By setting this Pool Client separately we can inform CF to wait until
         # API Gateway is deployed, which itself requires the Cognito Pool to be deployed.
         cognito_pool_client_operator = cognito.CfnUserPoolClient(
-            self, "operator",
+            self, "operatorClient",
             user_pool_id=cognito_pool.user_pool_id,
             access_token_validity=1,
             allowed_o_auth_flows=["code"],
@@ -249,7 +268,7 @@ class GreengrassInstallerStack(Stack):
             allowed_o_auth_scopes=["email", "openid"],
             callback_ur_ls=[api.url + api_res_manage_init_form.path.lstrip("/") + "/",
                             api.url + api_res_manage_request.path.lstrip("/") + "/"],
-            client_name="operator",
+            client_name=env.cognito_pool_operator_client_name.value,
             explicit_auth_flows=["ALLOW_USER_PASSWORD_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"],
             generate_secret=False,
             id_token_validity=1,
@@ -258,7 +277,6 @@ class GreengrassInstallerStack(Stack):
             refresh_token_validity=1
         )
         cognito_pool_client_operator.add_depends_on(api.node.default_child)
-        env.cognito_pool_operator_client_id.value = cognito_pool_client_operator.client_name
 
         # manage/init GET - Must not require Auth
         api_ep_manage_init_get = ApiEndpointConfig(
@@ -270,13 +288,19 @@ class GreengrassInstallerStack(Stack):
             api_method="GET",
             code_module="ggi_apigw_redirect_auth_for_init_form_lambda",
             layers=[lambda_common_layer],
-            environment=[env.log_level, env.cognito_pool_operator_client_id, env.cognito_pool_url],
+            environment=[env.log_level, env.cognito_pool_id, env.cognito_pool_url,
+                         env.cognito_pool_operator_client_name],
             request_parameters=None,
             request_models=None,
             request_validator=None,
             authorization_type=None,
             authorizer=None,
             authorization_scopes=None
+        )
+        cognito_pool.grant(
+            api_ep_manage_init_get.function,
+            "cognito-idp:Describe*",
+            "cognito-idp:List*"
         )
 
         # manage/init/form GET - Must not require Auth
@@ -379,8 +403,8 @@ class GreengrassInstallerStack(Stack):
 
         # provision/register-thing POST
         api_ep_provision_register_thing_post = ApiEndpointConfig(
-            self, "provisiong_register-thing_post",
-            function_name="PostRegisterthingLambda",
+            self, "provisioning_register-thing_post",
+            function_name="PostRegisterThingLambda",
             runtime=LAMBDA_RUNTIME,
             architecture=LAMBDA_ARCH,
             api_resource=api_res_register_thing,
@@ -415,9 +439,9 @@ class GreengrassInstallerStack(Stack):
             api_method="GET",
             code_module="ggi_apigw_provisioning_request_create_lambda",
             layers=[lambda_common_layer],
-            environment=[env.log_level, env.cognito_group_provisionning, env.cognito_pool_id,
-                         env.cognito_pool_url, env.cognito_pool_operator_client_id, env.dynamodb_table_name,
-                         env.apigw_base_url, env.ses_email_from],
+            environment=[env.log_level, env.cognito_group_provisioning, env.cognito_pool_id,
+                         env.cognito_pool_url, env.cognito_pool_operator_client_name,
+                         env.dynamodb_table_name, env.ses_email_from],
             request_parameters={"method.request.querystring.deviceId": True,
                                 "method.request.querystring.thingName": True,
                                 "method.request.querystring.userName": True,
@@ -442,7 +466,7 @@ class GreengrassInstallerStack(Stack):
             effect=iam.Effect.ALLOW,
             resources=["arn:aws:ses:{}:{}:identity/{}".format(aws_scope.region, aws_scope.account_id,
                                                               ses_id.email_identity_name)]
-            )
+        )
         )
 
         # request/status GET

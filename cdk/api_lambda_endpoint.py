@@ -31,7 +31,7 @@ class ApiEndpointConfig(Construct):
             runtime=runtime,
             architecture=architecture,
             layers=layers,
-            handler=code_module + ".handler",
+            handler=code_module + ".lambda_handler",
             code=_lambda.Code.from_asset(code_path,
                                          exclude=["**", "!{}.py".format(code_module)]),
             environment=None if environment is None else {x.name: x.value for x in environment},

@@ -35,11 +35,11 @@ class RuntimeEnvVars(object):
         # Cognito
         self.cognito_pool_url = _EnvVar('COGNITO_URL', '')
         self.cognito_pool_id = _EnvVar('COGNITO_USER_POOL_ID', '')
-        self.cognito_pool_operator_client_id = _EnvVar('COGNITO_CLIENT_ID', '')
+        self.cognito_pool_operator_client_name = _EnvVar('COGNITO_CLIENT_NAME', '')
         self.cognito_pool_gginstaller_client_id = _EnvVar('COGNITO_CLIENT_ID', '')
-        self.cognito_group_provisionning = _EnvVar('COGNITO_PROV_GROUP', '')
+        self.cognito_group_provisioning = _EnvVar('COGNITO_PROV_GROUP', '')
         # API Gateway
-        self.apigw_base_url = _EnvVar('API_BASE_URL', '')
+
         # S3
         self.s3_bucket_provisioning_templates = _EnvVar('S3_BUCKET_NAME', '')
         self.provisioning_template_name = _EnvVar('PROVISIONING_TEMPLATE', 'ggi_default-iot-provisioning-template.json')
@@ -60,6 +60,13 @@ class RuntimeEnvVars(object):
         self.token_exchange_role_name = _EnvVar('TOKEN_EXCHANGE_ROLE_NAME', '')
         self.token_exchange_role_alias = _EnvVar('TOKEN_EXCHANGE_ROLE_ALIAS', '')
         self.token_exchange_role_alias_policy_name = _EnvVar('TOKEN_EXCHANGE_ROLE_ALIAS_POLICY_NAME', '')
+
+    def __str__(self):
+        vl = []
+        for k, v in vars(self).items():
+            if isinstance(v, _EnvVar):
+                vl.append("{} = {}: {}".format(k, v.name, v.value))
+        return str(vl)
 
 
 # Below is a list of Environment Variables that must be set prior to deploying the CDK.

@@ -43,8 +43,10 @@ import json
 from uuid import uuid4
 from datetime import datetime
 
+
 # Cognito Configuration
 # TODO: simplify by detecting automatically when possible
+# TODO: Fetch API URL from https://{event.requestContext.domainName/{event.requestContext.stage}
 COG_GRP = os.environ.get("COGNITO_PROV_GROUP", "GreengrassProvisioningOperators")
 COG_POOL = os.environ.get("COGNITO_USER_POOL_ID")
 if not COG_POOL:
