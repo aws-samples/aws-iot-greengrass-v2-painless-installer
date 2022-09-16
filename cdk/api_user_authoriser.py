@@ -5,6 +5,7 @@ from aws_cdk import (
     Duration,
     aws_lambda as _lambda,
     aws_apigateway as apigw,
+    aws_logs
 )
 from cdk.environment_variables import RuntimeEnvVars
 
@@ -31,6 +32,7 @@ class ApiUserAuthorizer(Construct):
                 env.cognito_pool_operator_client_name.name: env.cognito_pool_operator_client_name.value,
                 env.cognito_pool_url.name: env.cognito_pool_url.value,
             },
+            log_retention=aws_logs.RetentionDays.THREE_MONTHS
         )
 
         self._auth = apigw.RequestAuthorizer(self, "UserCustomAuth",
@@ -42,3 +44,7 @@ class ApiUserAuthorizer(Construct):
     @property
     def authorizer(self):
         return self._auth
+
+    @property
+    def function(self):
+        return self._handler

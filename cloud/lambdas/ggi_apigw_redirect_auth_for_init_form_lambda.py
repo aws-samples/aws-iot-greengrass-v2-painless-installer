@@ -37,11 +37,29 @@ if not COG_USER_POOL_ID:
 FORM_RESOURCE = "form/"
 
 
+def internal_error(status_code: int = 500) -> dict:
+    """
+    Something went wrong
+    :param status_code: status code to use - default = 500
+    :return: response
+    """
+    msg = "Something unexpected happened. Try again and contact support if the problem persists."
+    return {
+        'statusCode': status_code,
+        'headers': {'Content-Type': "application.json"},
+        'body': json.dumps({'reason': msg})
+    }
+
+
 def lambda_handler(event, context):
 
     cid = get_cognito_client_id_from_name(cog_client=boto3.client('cognito-idp'),
                                           pool_id=COG_USER_POOL_ID,
                                           name=COG_C_NAME)
+    if not cid:
+        logger.critical("Couldn't determine the Cognito Client ID from its name: {}".format(COG_C_NAME))
+        return internal_error()
+
     auth_url = "{0}/login?client_id={1}&response_type=code".format(COG_URL, cid)
     redirect = "&redirect_uri=https://{0}{1}/{2}".format(event['requestContext']['domainName'],
                                                          event['requestContext']['path'],

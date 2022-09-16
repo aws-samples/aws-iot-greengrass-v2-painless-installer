@@ -42,12 +42,13 @@ class RuntimeEnvVars(object):
 
         # S3
         self.s3_bucket_provisioning_templates = _EnvVar('S3_BUCKET_NAME', '')
-        self.provisioning_template_name = _EnvVar('PROVISIONING_TEMPLATE', 'ggi_default-iot-provisioning-template.json')
+        self.thing_provisioning_template_name = _EnvVar('DEFAULT_THING_PROVISIONING_TEMPLATE',
+                                                  'ggi_default-iot-provisioning-template.json')
         self.s3_bucket_greengrass_config = _EnvVar('S3_BUCKET_NAME', '')
-        self.greengrass_config_template_name = _EnvVar('GG_CONFIG_TEMPLATE',
+        self.greengrass_config_template_name = _EnvVar('DEFAULT_GREENGRASS_CONFIG_FILE',
                                                        'ggi_default_greengrass-config-template.yaml')
         self.s3_bucket_scripts = _EnvVar('S3_RESOURCES_BUCKET', '')
-        self.installer_script_name = _EnvVar('INSTALLER_SCRIPT_NAME', 'install_gg.py')
+        self.installer_script_name = _EnvVar('DEFAULT_INSTALLER_SCRIPT_NAME', 'install_gg.py')
         self.s3_downloads_bucket = _EnvVar('S3_DOWNLOAD_BUCKET', '')
         self.s3_greengrass_artifacts_bucket = _EnvVar('S3_GREENGRASS_ARTIFACTS_BUCKET', '')
         # DynamoDB
@@ -70,7 +71,7 @@ class RuntimeEnvVars(object):
 
 
 # Below is a list of Environment Variables that must be set prior to deploying the CDK.
-_deploy_env_vars = ('SES_VERIFIED_EMAIL',)
+_deploy_env_vars = ('SES_VERIFIED_EMAIL', 'COGNITO_DOMAIN_PREFIX')
 
 
 def check_deploy_env_vars(env_vars: tuple = _deploy_env_vars) -> None:

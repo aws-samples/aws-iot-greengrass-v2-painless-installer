@@ -1,3 +1,5 @@
+import os
+
 from aws_cdk import (
     ScopedAws,
     Duration,
@@ -9,10 +11,9 @@ from aws_cdk import (
     aws_logs as logs,
     aws_iam as iam,
     aws_ses as ses,
-    CfnOutput
+    aws_logs
 )
 from constructs import Construct
-from constructs import DependencyGroup
 
 from cdk.environment_variables import RuntimeEnvVars
 from cdk.api_user_authoriser import ApiUserAuthorizer
@@ -20,6 +21,9 @@ from cdk.s3_setup import S3Setup
 from cdk.dynamodb_setup import DynamodbSetup
 from cdk.iot_core_setup import IotCoreSetup
 from cdk.api_lambda_endpoint import ApiEndpointConfig
+
+import random
+import string
 
 
 class GreengrassInstallerStack(Stack):
@@ -70,7 +74,8 @@ class GreengrassInstallerStack(Stack):
         cfn_account = apigw.CfnAccount(self, "account",
                                        cloud_watch_role_arn=cw_role.role_arn)
         # define API gateway and its Production Stage
-        api_prod_logs_grp = logs.LogGroup(self, "ApiGatewayAccessLogs")
+        api_prod_logs_grp = logs.LogGroup(self, "ApiGatewayAccessLogs",
+                                          retention=aws_logs.RetentionDays.THREE_MONTHS)
         api = apigw.RestApi(
             self, "GGIApi",
             rest_api_name="ggprovisioning",
@@ -151,14 +156,23 @@ class GreengrassInstallerStack(Stack):
         # Configure Cognito
         cognito_pool = cognito.UserPool(self, "GGIPool",
                                         user_pool_name="ggipool",
-                                        sign_in_aliases={'username': True, 'email': True},
+                                        sign_in_aliases=cognito.SignInAliases(email=True, username=True),
                                         self_sign_up_enabled=False,
-                                        removal_policy=RemovalPolicy.DESTROY
+                                        removal_policy=RemovalPolicy.DESTROY,
+                                        email=cognito.UserPoolEmail.with_cognito(),
+                                        standard_attributes=cognito.StandardAttributes(
+                                            family_name=cognito.StandardAttribute(required=True, mutable=True),
+                                            given_name=cognito.StandardAttribute(required=True, mutable=True),
+                                            email=cognito.StandardAttribute(required=True, mutable=True)
+                                        )
                                         )
 
         cognito_domain = cognito_pool.add_domain(
             "CognitoDomain",
-            cognito_domain=cognito.CognitoDomainOptions(domain_prefix="gginstaller")
+            cognito_domain=cognito.CognitoDomainOptions(
+                domain_prefix=os.environ["COGNITO_DOMAIN_PREFIX"], )
+            # You can generate a random prefix with (and export to an environment variable:
+            # "gginstaller-"+"".join(random.choice(string.ascii_lowercase + string.digits) for _ in range(16)))
         )
 
         request_scope = cognito.ResourceServerScope(scope_name="request",
@@ -238,6 +252,11 @@ class GreengrassInstallerStack(Stack):
                                             runtime=LAMBDA_RUNTIME,
                                             architecture=LAMBDA_ARCH,
                                             layers=[lambda_common_layer])
+        cognito_pool.grant(
+            api_auth_custom.function,
+            "cognito-idp:Describe*",
+            "cognito-idp:List*"
+        )
 
         # ### API Endpoints configuration ### #
 
@@ -255,13 +274,13 @@ class GreengrassInstallerStack(Stack):
         api_res_req_status = api_res_req.add_resource("status")
         api_res_req_update = api_res_req.add_resource("update")
 
-
         # This User Poll Client is created from a CFN Resource to avoid circular dependency between
         # Cognito Pool and API Gateway. By setting this Pool Client separately we can inform CF to wait until
         # API Gateway is deployed, which itself requires the Cognito Pool to be deployed.
         cognito_pool_client_operator = cognito.CfnUserPoolClient(
             self, "operatorClient",
             user_pool_id=cognito_pool.user_pool_id,
+            supported_identity_providers=["COGNITO"],
             access_token_validity=1,
             allowed_o_auth_flows=["code"],
             allowed_o_auth_flows_user_pool_client=True,
@@ -334,7 +353,8 @@ class GreengrassInstallerStack(Stack):
             layers=[lambda_common_layer],
             environment=[env.log_level, env.cognito_pool_id, env.cognito_pool_url,
                          env.cognito_pool_gginstaller_client_id, env.s3_downloads_bucket, env.s3_bucket_scripts,
-                         env.installer_script_name],
+                         env.installer_script_name, env.greengrass_config_template_name,
+                         env.thing_provisioning_template_name],
             request_parameters={"method.request.querystring.code": True},
             request_models=None,
             request_validator=req_validator_params,
@@ -412,7 +432,7 @@ class GreengrassInstallerStack(Stack):
             code_module="ggi_apigw_provision_thing_lambda",
             layers=[lambda_common_layer],
             environment=[env.log_level, env.dynamodb_table_name, env.s3_bucket_provisioning_templates,
-                         env.provisioning_template_name],
+                         env.thing_provisioning_template_name],
             request_parameters={"method.request.header.Authorization": True},
             request_models={'application/json': api_model_thing_provisioning},
             request_validator=req_validator_all,

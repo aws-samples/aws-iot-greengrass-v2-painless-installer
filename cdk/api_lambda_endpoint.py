@@ -4,6 +4,7 @@ from constructs import Construct
 from aws_cdk import (
     aws_lambda as _lambda,
     aws_apigateway as apigw,
+    aws_logs
 
 )
 from cdk.environment_variables import _EnvVar
@@ -35,6 +36,7 @@ class ApiEndpointConfig(Construct):
             code=_lambda.Code.from_asset(code_path,
                                          exclude=["**", "!{}.py".format(code_module)]),
             environment=None if environment is None else {x.name: x.value for x in environment},
+            log_retention=aws_logs.RetentionDays.THREE_MONTHS
         )
         self._integration = apigw.LambdaIntegration(self._lambda_f, proxy=True)
         self._method = api_resource.add_method(
@@ -45,7 +47,7 @@ class ApiEndpointConfig(Construct):
             request_validator=request_validator,
             authorization_type=authorization_type,
             authorizer=authorizer,
-            authorization_scopes=authorization_scopes
+            authorization_scopes=authorization_scopes,
         )
 
     @property

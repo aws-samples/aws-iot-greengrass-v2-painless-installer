@@ -34,7 +34,10 @@ if not S3_BUCKET:
     raise Exception("Environment variable S3_BUCKET_NAME missing")
 
 # Provisioning Template to use
-PROV_TEMPLATE = os.environ.get("PROVISIONING_TEMPLATE", "ggi_default-iot-provisioning-template.json")
+PROV_TEMPLATE = os.environ.get("DEFAULT_THING_PROVISIONING_TEMPLATE")
+if not PROV_TEMPLATE:
+    raise Exception("Environment variable DEFAULT_THING_PROVISIONING_TEMPLATE missing.")
+
 
 # Set some boto3 clients
 ddb_client = boto3.client('dynamodb')
