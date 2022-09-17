@@ -484,8 +484,7 @@ class GreengrassInstallerStack(Stack):
         api_ep_request_create_get.function.add_to_role_policy(iam.PolicyStatement(
             actions=["ses:SendEmail", "ses:SendRawEmail"],
             effect=iam.Effect.ALLOW,
-            resources=["arn:aws:ses:{}:{}:identity/{}".format(aws_scope.region, aws_scope.account_id,
-                                                              ses_id.email_identity_name)]
+            resources=["arn:aws:ses:{}:{}:identity/*".format(aws_scope.region, aws_scope.account_id)]
         )
         )
 
