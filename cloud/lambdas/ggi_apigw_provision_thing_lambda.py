@@ -29,9 +29,9 @@ if not DDB_TABLE:
     raise Exception("Environment variable DYNAMO_TABLE_NAME missing")
 
 # S3 bucket containing the template documents
-S3_BUCKET = os.environ.get("S3_BUCKET_NAME")
+S3_BUCKET = os.environ.get("S3_BUCKET_THING_TEMPLATES")
 if not S3_BUCKET:
-    raise Exception("Environment variable S3_BUCKET_NAME missing")
+    raise Exception("Environment variable S3_BUCKET_THING_TEMPLATES missing")
 
 # Provisioning Template to use
 PROV_TEMPLATE = os.environ.get("DEFAULT_THING_PROVISIONING_TEMPLATE")

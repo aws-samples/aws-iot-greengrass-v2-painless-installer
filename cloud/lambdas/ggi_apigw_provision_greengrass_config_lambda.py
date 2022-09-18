@@ -29,12 +29,12 @@ DDB_TABLE = os.environ.get("DYNAMO_TABLE_NAME")
 if not DDB_TABLE:
     raise Exception("Environment variable DYNAMO_TABLE_NAME missing")
 
-# S3 bucket containing the template documents
-S3_BUCKET = os.environ.get("S3_BUCKET_NAME")
+# S3 bucket containing the greengrass configuration files
+S3_BUCKET = os.environ.get("S3_BUCKET_GG_CONFIGS")
 if not S3_BUCKET:
-    raise Exception("Environment variable S3_BUCKET_NAME missing")
+    raise Exception("Environment variable S3_BUCKET_GG_CONFIGS missing")
 
-# Provisioning Template to use
+# Greengrass config file to use by default
 GG_CFG_FILE = os.environ.get("DEFAULT_GREENGRASS_CONFIG_FILE")
 if not GG_CFG_FILE:
     raise Exception("Environment variable DEFAULT_GREENGRASS_CONFIG_FILE missing.")
