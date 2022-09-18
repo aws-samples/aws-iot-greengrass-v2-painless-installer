@@ -32,6 +32,12 @@ with cloud-side information.
   * Runs the Greengrass installer
   * Et voilà!
 
+## Installation
+
+SES will be in Sandbox mode. Provisioning will fail until you take one of the actions described in the following 
+documentation:
+https://docs.aws.amazon.com/ses/latest/dg/request-production-access.html
+
 ## Planned features
 * Make this project deployable from CDK.
 * Add possibility to deploy an application to Greengrass after installation.

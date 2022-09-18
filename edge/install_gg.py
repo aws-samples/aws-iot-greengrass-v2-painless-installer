@@ -441,7 +441,7 @@ def is_request_allowed(transaction_id: str, device_id: str, api_uri: str, token:
                     return False
                 else:
                     logger.info("Request status is {}. Waiting for Request Status to be allowed. "
-                                "Will try again in {} seconds.".format(status, poll_period))
+                                "Check your email. Will try again in {} seconds.".format(status, poll_period))
                     time.sleep(poll_period)
         elif response.status == 401:  # Unauthorised
             logger.critical("Aborting due to Authentication issue: {}".format(response.body))
@@ -595,9 +595,11 @@ class SslCreds(object):
             os.chmod(path=self.crt_path, mode=0o400)
 
 
-def provision_thing(device_id: str, transaction_id: str, csr: str, token: str, api_uri: str) -> typing.Any:
+def provision_thing(device_id: str, transaction_id: str, csr: str, token: str, api_uri: str,
+                    prov_template: str) -> typing.Any:
     """
     Calls the API to provision a new Thing in IoT Core, providing a CSR and expecting a signed certificate in return.
+    :param prov_template: Name of the Provisioning Template
     :param device_id: Identifier of the Device, like a serial number
     :param transaction_id: UUID returned when creating the request
     :param csr: the CSR as string
@@ -613,8 +615,9 @@ def provision_thing(device_id: str, transaction_id: str, csr: str, token: str, a
     data = {
         'CSR': csr,
         'deviceId': device_id,
-        'transactionId': transaction_id
-    }  # 'provisioningTemplate' also supported
+        'transactionId': transaction_id,
+        'provisioningTemplate': prov_template
+    }
 
     response = request(
         url=url,
@@ -633,9 +636,11 @@ def provision_thing(device_id: str, transaction_id: str, csr: str, token: str, a
         return {}
 
 
-def get_greengrass_config(token: str, api_uri: str, transaction_id: str, device_id: str):
+def get_greengrass_config(token: str, api_uri: str, transaction_id: str,
+                          device_id: str, gg_config_file: str):
     """
     Calls the API to get the customised Greengrass Configuration template. Expects the template to be Bse64 encoded.
+    :param gg_config_file: Greengrass Configuration File name
     :param token: Cognito Access Token
     :param api_uri: API Gateway endpoint (without https://)
     :param transaction_id: UUID returned when creating the request
@@ -645,7 +650,7 @@ def get_greengrass_config(token: str, api_uri: str, transaction_id: str, device_
     url = "https://{}{}".format(api_uri, API_RESOURCE_GREENGRASS_CONFIG)
     method = "GET"
     headers = {'Authorization': token, "Accept": "text/plain"}
-    params = {'transactionId': transaction_id, 'deviceId': device_id}  # 'greengrassConfigTemplate' also supported
+    params = {'transactionId': transaction_id, 'deviceId': device_id, 'greengrassConfigTemplate': gg_config_file}
 
     response = request(
         url=url,
@@ -735,6 +740,8 @@ THING_NAME = "$THING_NAME$"
 DEVICE_SERIAL = "$DEVICE_SERIAL$"
 API_URI = "$API_URI$"
 TOKEN = "$TOKEN$"
+GG_CFG_FILE = "$GG_CFG_FILE$"
+THING_PROV_TEMPLATE = "$THING_PROV_TEMPLATE$"
 # DO NOT CHANGE CONSTANTS ABOVE
 
 
@@ -826,6 +833,7 @@ if __name__ == "__main__":
                                    csr=csr,
                                    token=app_token,
                                    api_uri=API_URI,
+                                   prov_template=THING_PROV_TEMPLATE
                                    )
         if not response:
             raise FailProvisioning("Registering IoT Thing Failed.")
@@ -839,7 +847,10 @@ if __name__ == "__main__":
             raw_cfg = get_greengrass_config(token=app_token,
                                             api_uri=API_URI,
                                             transaction_id=request_id,
-                                            device_id=DEVICE_SERIAL)
+                                            device_id=DEVICE_SERIAL,
+                                            gg_config_file=GG_CFG_FILE)
+            if not raw_cfg:
+                raise FailProvisioning("No Greengrass config received! Aborting provisioning.")
             logger.debug("Config file received from API:\n{}".format(raw_cfg))
             cfg = populate_greengrass_config(ssl_creds=creds, template=raw_cfg)
             logger.debug("Final Greengrass configuration:\n{}".format(cfg))
