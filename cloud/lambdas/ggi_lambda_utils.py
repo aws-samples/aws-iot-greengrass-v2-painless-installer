@@ -34,7 +34,6 @@ import re
 from datetime import datetime
 from base64 import b64encode
 
-
 # Set the logger and log level
 #  Define a LOG_LEVEL environment variable and give it he desired value
 LOG_LEVEL = str(os.environ.get("LOG_LEVEL", "WARNING")).upper()
@@ -377,7 +376,6 @@ def get_user_pool_secret(cog_client: botoclient, user_pool_id: str, client_id: s
 
 
 def get_cognito_client_id_from_name(cog_client: botoclient, pool_id: str, name: str) -> str:
-
     """
     Retrieve the Cognito Client ID from the Cognito User Pool Name
     :param cog_client: The Boto3 client for Cognito
@@ -392,3 +390,20 @@ def get_cognito_client_id_from_name(cog_client: botoclient, pool_id: str, name: 
             cid = client['ClientId']
             break
     return cid
+
+
+def list_bucket(s3_client: botoclient, bucket_name: str, suffix: str = "") -> list[str]:
+    """
+    Returns a list of object keys found in this bucket
+    :param s3_client: a boto3 client for S3
+    :param bucket_name: the name fo the bucket to list
+    :param suffix: only keys ending with this suffix will be returned. Default empty = all keys are returned.
+    :return: a list of object keys
+    """
+
+    response = s3_client.list_objects_v2(Bucket=bucket_name)
+    keys = []
+    for obj in response['Contents']:
+        if obj['Key'].endswith(suffix):
+            keys.append(obj['Key'])
+    return keys

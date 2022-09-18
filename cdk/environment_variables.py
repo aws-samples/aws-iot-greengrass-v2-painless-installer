@@ -41,10 +41,10 @@ class RuntimeEnvVars(object):
         # API Gateway
 
         # S3
-        self.s3_bucket_provisioning_templates = _EnvVar('S3_BUCKET_NAME', '')
+        self.s3_bucket_provisioning_templates = _EnvVar('S3_BUCKET_THING_TEMPLATES', '')
         self.thing_provisioning_template_name = _EnvVar('DEFAULT_THING_PROVISIONING_TEMPLATE',
                                                   'ggi_default-iot-provisioning-template.json')
-        self.s3_bucket_greengrass_config = _EnvVar('S3_BUCKET_NAME', '')
+        self.s3_bucket_greengrass_config = _EnvVar('S3_BUCKET_GG_CONFIGS', '')
         self.greengrass_config_template_name = _EnvVar('DEFAULT_GREENGRASS_CONFIG_FILE',
                                                        'ggi_default_greengrass-config-template.yaml')
         self.s3_bucket_scripts = _EnvVar('S3_RESOURCES_BUCKET', '')

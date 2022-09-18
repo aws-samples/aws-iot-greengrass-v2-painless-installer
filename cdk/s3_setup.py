@@ -41,7 +41,7 @@ class S3Setup(Construct):
                                   )
 
         # Bucket used to host the greengrass configuration templates
-        self._gg_config_bucket = s3.Bucket(self, "ggConfigBucket",
+        self._gg_config_bucket = s3.Bucket(self, "GreengrassConfigBucket",
                                            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
                                            encryption=s3.BucketEncryption.S3_MANAGED,
                                            enforce_ssl=True,
