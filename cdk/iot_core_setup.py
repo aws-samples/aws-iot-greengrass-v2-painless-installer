@@ -50,7 +50,7 @@ class IotCoreSetup(Construct):
         token_exchange_role_name = "ggi_GreengrassV2TokenExchangeRole"
         token_exchange_role = iam.Role(self, "TokenExchangeRole",
                                        assumed_by=iam.ServicePrincipal("credentials.iot.amazonaws.com"),
-                                       description="token Echnage Role required by Greengrass",
+                                       description="Token Exchange Role required by Greengrass",
                                        role_name=token_exchange_role_name
                                        )
         env.token_exchange_role_name.value = token_exchange_role.role_name
