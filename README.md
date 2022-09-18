@@ -34,12 +34,57 @@ with cloud-side information.
 
 ## Installation
 
+This application should be deployed using the AWS Cloud Development Kit (AWS CDK).
+The CDK Stack has been written in Python 3 to stay consistent with the application language.
+In a nutshell, after installing a stable version of Node.js:
+
+<code>
+npm install -g aws-cdk
+pip3 install -r requirements.txt
+cdk deploy
+</code>
+
+In addition to providing the account ID, region and credentials to CDK, 
+you will have to declare two environment variables:
+* COGNITO_DOMAIN_PREFIX: a unique URL prefix for teh cognito domain, like cognito-123456
+* SES_VERIFIED_EMAIL: the verified email address that SES will use to send emails. You'll receive an email for 
+  verifying this address, so make sure you can access the mailbox.
+
 SES will be in Sandbox mode. Provisioning will fail until you take one of the actions described in the following 
 documentation:
 https://docs.aws.amazon.com/ses/latest/dg/request-production-access.html
 
+## Usage
+All you have to do is:
+
+1. Note the Output, provided by the CDK deployment, giving you the URL of API Gateway.
+2. Hit this URL with the endpoint /manage/init/ 
+    (for instance https://xlevm4nzib.execute-api.eu-central-1.amazonaws.com/prod/manage/init)
+3. Follow the instructions
+
+## Good to know
+Five buckets are deployed by CDK:
+
+* SetupScript: This is where the script installing Greegrass on the device is located. You can add customized scripts
+  to this Bucket and if their extension is `.py` they will be listed as options in the selection form.
+* ProvTemplate: This is where the IoT Provisioning Template is stored. Tou can add customized templates
+  to this Bucket and if their extension is `.json` they will be listed as options in the selection form.
+* GreengrassConfig: This is where the IoT Greengrass Configuration File is stored. Tou can add customized configurations
+  to this Bucket and if their extension is `.yaml` they will be listed as options in the selection form.
+* GreengrassArtifacts: This Bucket is empty. It is where the deployable Greegrass artifacts should be stored. This
+  Bucket is created at this time to be able to set read access to the Greegrass devices.
+* Downloads: This is where the installations script is stored after being customised. It is then downloaded manually
+  with a pre-signed URL provided to you in the process.
+
+Bear in mind that CDK will customise the above Bucket names to make them unique. So you'll have to 
+interpret what you read!
+
+An Amazon DynamoDB Table tracks installations and their details.
+
+Logs are enabled by default.
+
 ## Planned features
-* Make this project deployable from CDK.
+
 * Add possibility to deploy an application to Greengrass after installation.
 
 ## Limitations
