@@ -44,7 +44,6 @@ from uuid import uuid4
 from datetime import datetime
 
 # Cognito Configuration
-# TODO: simplify by detecting automatically when possible
 COG_GRP = os.environ.get("COGNITO_PROV_GROUP", "GreengrassProvisioningOperators")
 COG_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID")
 if not COG_USER_POOL_ID:
