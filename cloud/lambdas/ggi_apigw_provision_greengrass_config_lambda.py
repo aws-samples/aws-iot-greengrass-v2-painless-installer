@@ -39,9 +39,11 @@ GG_CFG_FILE = os.environ.get("DEFAULT_GREENGRASS_CONFIG_FILE")
 if not GG_CFG_FILE:
     raise Exception("Environment variable DEFAULT_GREENGRASS_CONFIG_FILE missing.")
 
+# Greengrass Token Exchange Role Alias
+IOT_ROLE_ALIAS = os.environ.get("TOKEN_EXCHANGE_ROLE_ALIAS")
+if not IOT_ROLE_ALIAS:
+    raise Exception("Environment variable TOKEN_EXCHANGE_ROLE_ALIAS missing.")
 
-# Constants
-IOT_ROLE_ALIAS = "ggi_GreengrassCoreTokenExchangeRoleAlias"
 
 # Set some boto3 clients
 ddb_client = boto3.client('dynamodb')

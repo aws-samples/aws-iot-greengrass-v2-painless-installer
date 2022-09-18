@@ -15,9 +15,7 @@
             "Type" : "AWS::IoT::Thing",
             "Properties" : {
                 "ThingName" : {"Ref" : "ThingName"},
-                "AttributePayload" : { "deviceId" :  {"Ref" : "deviceId"}},
-                "ThingTypeName" :  "ggi_GreengrassV2CoreDeviceType",
-                "ThingGroups" : ["ggi_GreengrassV2CoreDevices"]
+                "AttributePayload" : { "SerialNumber" :  {"Ref" : "deviceId"}}
             },
             "OverrideSettings" : {
                 "AttributePayload" : "FAIL",
@@ -32,10 +30,16 @@
                 "Status" : "ACTIVE"
             }
         },
-        "policy" : {
+        "tokenPolicy" : {
             "Type" : "AWS::IoT::Policy",
             "Properties" : {
-                "PolicyName" : "ggi_GreengrassV2CoreTokenExchangeRoleAliasPolicy"
+                "PolicyName" : "$TOKEN_EXCHANGE_ROLE_ALIAS_POLICY_NAME$"
+            }
+        },
+        "devicePolicy" : {
+            "Type" : "AWS::IoT::Policy",
+            "Properties" : {
+                "PolicyName" : "$DEVICE_POLICY_NAME$"
             }
         }
     }

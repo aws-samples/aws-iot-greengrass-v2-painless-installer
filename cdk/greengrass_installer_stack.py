@@ -417,7 +417,7 @@ class GreengrassInstallerStack(Stack):
         )
         dynamodb.table.grant_read_data(api_ep_provision_greengrass_config_get.function)
         s3_res.gg_config_bucket.grant_read(api_ep_provision_greengrass_config_get.function)
-        api_ep_manage_init_form_post.function.role.add_managed_policy(
+        api_ep_provision_greengrass_config_get.function.role.add_managed_policy(
             iam.ManagedPolicy.from_aws_managed_policy_name("AWSIoTConfigReadOnlyAccess")
         )
 
@@ -432,7 +432,8 @@ class GreengrassInstallerStack(Stack):
             code_module="ggi_apigw_provision_thing_lambda",
             layers=[lambda_common_layer],
             environment=[env.log_level, env.dynamodb_table_name, env.s3_bucket_provisioning_templates,
-                         env.thing_provisioning_template_name],
+                         env.thing_provisioning_template_name, env.device_policy_name,
+                         env.token_exchange_role_alias_policy_name],
             request_parameters={"method.request.header.Authorization": True},
             request_models={'application/json': api_model_thing_provisioning},
             request_validator=req_validator_all,

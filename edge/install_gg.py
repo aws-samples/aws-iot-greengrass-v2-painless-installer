@@ -441,7 +441,7 @@ def is_request_allowed(transaction_id: str, device_id: str, api_uri: str, token:
                     return False
                 else:
                     logger.info("Request status is {}. Waiting for Request Status to be allowed. "
-                                "Will try again in {} seconds.".format(status, poll_period))
+                                "Check your email. Will try again in {} seconds.".format(status, poll_period))
                     time.sleep(poll_period)
         elif response.status == 401:  # Unauthorised
             logger.critical("Aborting due to Authentication issue: {}".format(response.body))
@@ -849,6 +849,8 @@ if __name__ == "__main__":
                                             transaction_id=request_id,
                                             device_id=DEVICE_SERIAL,
                                             gg_config_file=GG_CFG_FILE)
+            if not raw_cfg:
+                raise FailProvisioning("No Greengrass config received! Aborting provisioning.")
             logger.debug("Config file received from API:\n{}".format(raw_cfg))
             cfg = populate_greengrass_config(ssl_creds=creds, template=raw_cfg)
             logger.debug("Final Greengrass configuration:\n{}".format(cfg))
