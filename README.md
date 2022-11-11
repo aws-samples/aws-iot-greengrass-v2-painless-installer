@@ -65,15 +65,15 @@ All you have to do is:
 ## Good to know
 Five buckets are deployed by CDK:
 
-* SetupScript: This is where the script installing Greegrass on the device is located. You can add customized scripts
+* **Scripts**: This is where the script installing Greegrass on the device is located. You can add customized scripts
   to this Bucket and if their extension is `.py` they will be listed as options in the selection form.
-* ProvTemplate: This is where the IoT Provisioning Template is stored. Tou can add customized templates
+* **provTemplate**: This is where the IoT Provisioning Template is stored. Tou can add customized templates
   to this Bucket and if their extension is `.json` they will be listed as options in the selection form.
-* GreengrassConfig: This is where the IoT Greengrass Configuration File is stored. Tou can add customized configurations
+* **GreengrassConfig**: This is where the IoT Greengrass Configuration File is stored. Tou can add customized configurations
   to this Bucket and if their extension is `.yaml` they will be listed as options in the selection form.
-* GreengrassArtifacts: This Bucket is empty. It is where the deployable Greegrass artifacts should be stored. This
+* **GreengrassArtifacts**: This Bucket is empty. It is where the deployable Greegrass artifacts should be stored. This
   Bucket is created at this time to be able to set read access to the Greegrass devices.
-* Downloads: This is where the installations script is stored after being customised. It is then downloaded manually
+* **Downloads**: This is where the installations script is stored after being customised. It is then downloaded manually
   with a pre-signed URL provided to you in the process.
 
 Bear in mind that CDK will customise the above Bucket names to make them unique. So you'll have to 
@@ -88,5 +88,7 @@ Logs are enabled by default.
 * Add possibility to deploy an application to Greengrass after installation.
 
 ## Limitations
+
+* Only Linux devices are supported.
 
 

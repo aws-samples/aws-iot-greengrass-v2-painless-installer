@@ -256,7 +256,6 @@ def check_requirements_darwin() -> dict:
     :return: a dictionary with each requirement as key and True (met) or False (not met) as value
     :raises: ProvisioningException until t is supported.
     """
-    # TODO: Fix this
     # return {'one': True, 'two': True}
     raise ProvisioningException("MacOS (Darwin) is not supported.")
 

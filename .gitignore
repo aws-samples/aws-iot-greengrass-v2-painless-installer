@@ -143,3 +143,4 @@ cdk.out
 # CDK other
 *.swp
 package-lock.json
+/cdk.context.json
