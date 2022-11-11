@@ -42,6 +42,7 @@ import os
 import json
 from uuid import uuid4
 from datetime import datetime
+from urllib.parse import urlencode, quote
 
 # Cognito Configuration
 COG_GRP = os.environ.get("COGNITO_PROV_GROUP", "GreengrassProvisioningOperators")
@@ -75,9 +76,9 @@ ddb_client = boto3.client('dynamodb')
 ses_client = boto3.client("ses")
 
 
-def find_confirmed_user_in_group(user_name: str, users: dict) -> dict:
+def find_user_in_group(user_name: str, users: dict) -> dict:
     """
-    Find a user with confirmed email address
+    Find a user in a group
     :param user_name: user name
     :param users: the dictionary of users returned by Cognito
     :return: the user of an empty dict
@@ -85,10 +86,9 @@ def find_confirmed_user_in_group(user_name: str, users: dict) -> dict:
     # logger.debug("Users received: {}".format(users))
     for user in users:
         if user['Username'] == user_name:
-            if user['UserStatus'] == "CONFIRMED":
-                return user
-            else:
-                return {}
+            return user
+        else:
+            return {}
     return {}
 
 
@@ -109,8 +109,7 @@ def get_user_from_group(user_name: str, pool_id: str = COG_USER_POOL_ID, group: 
         UserPoolId=pool_id,
         GroupName=group
     )
-    # FIXME: move this to the function to avoid parsing the nextToken if we had a hit but email was not confirmed
-    user = find_confirmed_user_in_group(user_name, resp.get('Users'))
+    user = find_user_in_group(user_name, resp.get('Users'))
     if not user:
         nextToken = resp.get('nextToken')
         while nextToken:
@@ -119,13 +118,16 @@ def get_user_from_group(user_name: str, pool_id: str = COG_USER_POOL_ID, group: 
                 GroupName=group,
                 nextToken=nextToken
             )
-            user = find_confirmed_user_in_group(user_name, resp.get('Users'))
+            user = find_user_in_group(user_name, resp.get('Users'))
             if not user:
                 nextToken = resp.get('nextToken')
             else:
                 break
-    logger.debug("Found User: '{}'".format(user))
-    return user
+    if user.get('UserStatus') == "CONFIRMED":
+        logger.debug("Found User: '{}'".format(user))
+        return user
+    else:
+        return {}
 
 
 def get_user_email(user: dict) -> str:
@@ -260,7 +262,6 @@ def new_xaction_record(thing_name: str, device_id: str, username: str, email: st
 def send_email(transaction_id: str, device_id: str, thing_name: str, recipient: str, cog_cid: str,
                api_url: str, cog_url: str = COG_URL, source: str = SES_SENDER):
     """
-    FIXME use urllib.parse.urlencode to create the state string. This should allow to support spaces in strings
     Sends an email to the user containing links to allow or deny the provisioning request
     :param cog_url: Cognito domain URL
     :param cog_cid: Cognito Client ID
@@ -273,15 +274,18 @@ def send_email(transaction_id: str, device_id: str, thing_name: str, recipient: 
     :return: the response from SES (dict)
     """
     auth_url = '{0}/login?client_id={1}&response_type=code'.format(cog_url, cog_cid)
-    state_allow = '&state=action=allow+transactionId={0}+deviceId={1}'.format(transaction_id, device_id)
-    state_deny = '&state=action=deny+transactionId={0}+deviceId={1}'.format(transaction_id, device_id)
+    params = {'action': "allow", 'transactionId': transaction_id, 'deviceId': device_id}
+    # Need to quote twice on top of urlencode to escape the & present in the state value which is decode by API Gateway
+    state_allow = '&state={}'.format(quote(quote(urlencode(params))))
+    params['action'] = 'deny'
+    state_deny = '&state={}'.format(quote(quote(urlencode(params))))
     redirect = '&redirect_uri={0}/{1}'.format(api_url, OPS_ENDPOINT)
 
     data = 'The device {0} is requesting to be provisioned on AWS IoT as a Thing named {1}.<br>' \
            'Please allow or deny this request by clicking on one of the links below (log-in required):<br><br>' \
            '<a class="ulink" href="{2}{3}{5}" target="_blank">Allow this provisioning request</a>.<br><br>' \
            '<a class="ulink" href="{2}{4}{5}" target="_blank">Deny this provisioning request</a>.<br>'.format(
-        device_id, thing_name, auth_url, state_allow, state_deny, redirect)
+            device_id, thing_name, auth_url, state_allow, state_deny, redirect)
     body = {
         'Html': {
             'Charset': "UTF-8",

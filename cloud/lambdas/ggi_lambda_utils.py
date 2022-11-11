@@ -216,6 +216,16 @@ def is_valid_thing_name(thing_name: str) -> bool:
     return re.fullmatch(pattern=pattern, string=thing_name) is not None
 
 
+def is_valid_thing_attribute(attribute: str) -> bool:
+    """
+    Checks that Thing Attribute matches IoT Core requirements
+    :param attribute: The attribute to check
+    :return: True of match or False
+    """
+    pattern = "^[a-zA-Z0-9_.,@/:#-]*$"
+    return re.fullmatch(pattern=pattern, string=attribute) is not None and len(attribute) < 801
+
+
 def is_new_iot_thing(thing_name: str, iot_client: botoclient):
     """
     Checks if the thing_name already exists in IoT Core
