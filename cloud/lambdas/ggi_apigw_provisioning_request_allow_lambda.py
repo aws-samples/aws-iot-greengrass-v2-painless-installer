@@ -27,6 +27,7 @@ import boto3
 from uuid import UUID
 import re
 import traceback
+from urllib.parse import parse_qs
 
 # DynamoDB configuration
 DDB_TABLE = os.environ.get("DYNAMO_TABLE_NAME")
@@ -97,19 +98,12 @@ def error_500(msg: str = "Something went wrong on the Backend. Check the logs.")
 def decode_state(event: dict) -> dict:
     """
     Decode the query string parameters string embedded into the Cognito state query string parameter
-    FIXME: this does not support spaces in the query string parameters name nor value
     :param event: the event object as passed to the handler
     :return: a dictionary with the query string parameters included in the state parameter.
     """
-    state = event['queryStringParameters'].get('state')
-    d = {}
-    if state:
-        params = state.split()
-        for p in params:
-            k, v = p.split("=")
-            d[k] = v
-    # logger.debug("State Params: {}".format(d))
-    return d
+    qs = parse_qs(event['queryStringParameters'].get('state'))
+    logger.debug("Decoded State Params: {}".format(qs))
+    return {k: qs[k][0] for k in qs.keys()}
 
 
 def get_authorizer_params(event: dict) -> dict:
@@ -130,9 +124,9 @@ def get_authorizer_params(event: dict) -> dict:
 
 def is_valid_state_params(params: dict) -> bool:
     """
-    State parameters are passed as Query String Parameters and could have been altered. this is a minimalistic
+    State parameters are passed as Query String Parameters and could have been altered. This is a minimalistic
     validation of those parameters
-    :param params: dictionary with the paramters
+    :param params: dictionary with the parameters
     :return: True if valid or False
     """
     good = True
@@ -141,12 +135,6 @@ def is_valid_state_params(params: dict) -> bool:
         _ = UUID(params['transactionId'], version=4)
     except ValueError:
         logger.critical("The transactionId is not a valid uuid4. It could mean an attempt of code injection")
-        good = False
-
-    # Check that Thing Name matches IoT Core requirements
-    pattern = "^[0-9a-zA-Z:\-_]*$"
-    if re.fullmatch(pattern=pattern, string=params['deviceId']) is None:
-        logger.critical("The thing Name is not a valid name according to IoT Core rule.")
         good = False
 
     # Check if action is part of allowed list
@@ -179,7 +167,7 @@ def lambda_handler(event, context):
     """
     try:
         # logger.debug("Event: {}".format(event))
-
+        logger.debug("Query String Params: {}".format(event['queryStringParameters']))
         # Retrieve operational parameters
         parameters = decode_state(event=event)
         if is_valid_state_params(parameters) is False:

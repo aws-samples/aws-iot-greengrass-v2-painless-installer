@@ -4,13 +4,13 @@
     "include": [
       "app.py",
       "cdk/**",
-      "cloud/lambdas/*",
-      "edge/install_gg.py",
-      "iot/gg_configs/*",
-      "iot/iot_templates/*"
+      "edge/*",
+      "cloud/**"
     ],
     "exclude": [
       "README.md",
+      "LICENSE",
+      ".gitignore",
       "cdk*.json",
       "requirements*.txt",
       "source.bat",

@@ -332,7 +332,8 @@ class GreengrassInstallerStack(Stack):
             api_method="GET",
             code_module="ggi_apigw_init_get_form_lambda",
             layers=[lambda_common_layer],
-            environment=[env.log_level],
+            environment=[env.log_level, env.s3_bucket_scripts, env.s3_bucket_provisioning_templates,
+                         env.s3_bucket_greengrass_config],
             request_parameters={"method.request.querystring.code": True},
             request_models=None,
             request_validator=req_validator_params,
@@ -340,6 +341,9 @@ class GreengrassInstallerStack(Stack):
             authorizer=None,
             authorization_scopes=None
         )
+        s3_res.scripts_bucket.grant_read(api_ep_manage_init_form_get.function)
+        s3_res.gg_config_bucket.grant_read(api_ep_manage_init_form_get.function)
+        s3_res.prov_templates_bucket.grant_read(api_ep_manage_init_form_get.function)
 
         # init/form POST
         api_ep_manage_init_form_post = ApiEndpointConfig(

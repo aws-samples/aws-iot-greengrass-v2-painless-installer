@@ -24,7 +24,6 @@ import boto3
 from uuid import uuid4
 
 # Cognito Configuration
-# TODO: simplify by detecting automatically when possible
 COG_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID")
 if not COG_USER_POOL_ID:
     raise Exception("Environment variable COGNITO_USER_POOL_ID missing")

@@ -71,7 +71,6 @@ def bad_request(msg: str, status_code: int = 403) -> dict:
     :param status_code: error code
     :return: response
     """
-    # TODO: Make better HTML response for the user
     return {
         'statusCode': status_code,
         'headers': {'Content-Type': "application.json"},
@@ -282,12 +281,12 @@ def lambda_handler(event, context) -> dict:
 
         # Check validity of the elements
         if not is_valid_thing_name(thing_name):
-            msg += "Thing Name must comply with specification: '{}'\n".format("^[0-9a-zA-Z:\-_]*$")
+            msg += "Thing Name must comply with specification: '{}'".format("[0-9a-zA-Z:\-_]*$")
         if not is_new_iot_thing(thing_name=thing_name, iot_client=iot_client):
-            msg += "This Thing Name is already used: {}".format(thing_name)
-        if " " in device_id:
-            # FIXME: remove if/when spaces are supported
-            msg += "Device Id cannot contain spaces\n"
+            msg += "\nThis Thing Name is already used: {}".format(thing_name)
+        if not is_valid_thing_attribute(device_id):
+            msg += "\nDevice ID must comply with IoT Thing Attribute specification: " \
+                   "'{}'".format("[a-zA-Z0-9_.,@/:#-]*$")
         if msg:
             return bad_request(msg=msg)
 
