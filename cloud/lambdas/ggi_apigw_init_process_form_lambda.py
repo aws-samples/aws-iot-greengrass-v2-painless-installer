@@ -324,7 +324,7 @@ def lambda_handler(event, context) -> dict:
             script = script.replace(k, v, 1)
 
         # Save to S3 and get a pre-signed URL
-        out_file_name = "{}-{}-{}".format(thing_name, device_id, installer_script)
+        out_file_name = "{}-{}".format(thing_name, installer_script)
         if write_to_s3(bucket=S3_OUTPUTS, key=out_file_name, data=script, s3_client=s3_client) is not True:
             logger.critical("Could not write the script to S3.")
             return internal_error()

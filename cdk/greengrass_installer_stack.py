@@ -63,7 +63,7 @@ class GreengrassInstallerStack(Stack):
         # Setup IoT Core roles and policies
         iot_core = IotCoreSetup(self, "IoTCoreSetup", env=env, gg_artifacts_bucket=s3_res.gg_artifacts_bucket)
 
-        # Because of https://github.com/aws/aws-cdk/issues/10878 a cloudWatch Role mus tbe created manually
+        # Because of https://github.com/aws/aws-cdk/issues/10878 a cloudWatch Role must be created manually
         # for the API to be able to log to CloudWatch
         cw_role = iam.Role(
             self, "CWRole",
@@ -83,19 +83,20 @@ class GreengrassInstallerStack(Stack):
                 allow_origins=apigw.Cors.ALL_ORIGINS,
                 allow_methods=apigw.Cors.ALL_METHODS
             ),
-            deploy_options=apigw.StageOptions(
-                access_log_destination=apigw.LogGroupLogDestination(api_prod_logs_grp),
-                access_log_format=apigw.AccessLogFormat.json_with_standard_fields(
-                    caller=True,
-                    http_method=True,
-                    ip=True,
-                    protocol=True,
-                    request_time=True,
-                    resource_path=True,
-                    response_length=True,
-                    status=True,
-                    user=True)
-            ),
+            # Uncomment below when CDK ace condition owth new account is fixed
+            # deploy_options=apigw.StageOptions(
+            #     access_log_destination=apigw.LogGroupLogDestination(api_prod_logs_grp),
+            #     access_log_format=apigw.AccessLogFormat.json_with_standard_fields(
+            #         caller=True,
+            #         http_method=True,
+            #         ip=True,
+            #         protocol=True,
+            #         request_time=True,
+            #         resource_path=True,
+            #         response_length=True,
+            #         status=True,
+            #         user=True)
+            # ),
             cloud_watch_role=False
         )
         '''

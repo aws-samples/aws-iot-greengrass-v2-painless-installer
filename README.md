@@ -14,7 +14,7 @@ Greengrass is necessary.
 ## Flow Diagram
 ![Flow Diagram](./doc/ArchitectureDiagrams-FlowDiagram.png)
 
-* The User triggers a new provisioning by filling a form after auhentication.
+* The User triggers a new provisioning by filling a form after authentication.
 * In response to the form the user receives a short-lived pre-signed URL to a script stored in an S3 bucket.
 This script is customised for this provisioning and contains a ime-limited access token to interact with the API.
 * The User downloads and runs this script on the device
@@ -53,6 +53,11 @@ you will have to declare two environment variables:
 SES will be in Sandbox mode. Provisioning will fail until you take one of the actions described in the following 
 documentation:
 https://docs.aws.amazon.com/ses/latest/dg/request-production-access.html
+
+Once deployed:
+* Create users in Cognito
+* Add them to the User Group created by the CDK (by default: GreengrassProvisioningOperators)
+* Make sure to verify the Users email
 
 ## Usage
 All you have to do is:
