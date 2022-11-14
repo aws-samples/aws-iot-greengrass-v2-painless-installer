@@ -135,3 +135,12 @@ dmypy.json
 # Draw.io
 doc/*.bkp
 doc/*.dtmp
+
+# CDK asset staging directory
+.cdk.staging
+cdk.out
+
+# CDK other
+*.swp
+package-lock.json
+/cdk.context.json

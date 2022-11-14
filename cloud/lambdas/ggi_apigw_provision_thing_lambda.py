@@ -29,12 +29,24 @@ if not DDB_TABLE:
     raise Exception("Environment variable DYNAMO_TABLE_NAME missing")
 
 # S3 bucket containing the template documents
-S3_BUCKET = os.environ.get("S3_BUCKET_NAME")
+S3_BUCKET = os.environ.get("S3_BUCKET_THING_TEMPLATES")
 if not S3_BUCKET:
-    raise Exception("Environment variable S3_BUCKET_NAME missing")
+    raise Exception("Environment variable S3_BUCKET_THING_TEMPLATES missing")
 
 # Provisioning Template to use
-PROV_TEMPLATE = os.environ.get("PROVISIONING_TEMPLATE", "ggi_default-iot-provisioning-template.json")
+PROV_TEMPLATE = os.environ.get("DEFAULT_THING_PROVISIONING_TEMPLATE")
+if not PROV_TEMPLATE:
+    raise Exception("Environment variable DEFAULT_THING_PROVISIONING_TEMPLATE missing.")
+
+# Policy names (to attach via the provisioning template)
+TOKEN_POLICY = os.environ.get("TOKEN_EXCHANGE_ROLE_ALIAS_POLICY_NAME")
+if not TOKEN_POLICY:
+    raise Exception("Environment variable TOKEN_EXCHANGE_ROLE_ALIAS_POLICY_NAME missing.")
+
+DEVICE_POLICY = os.environ.get("DEVICE_POLICY_NAME")
+if not DEVICE_POLICY:
+    raise Exception("Environment variable DEVICE_POLICY_NAME missing.")
+
 
 # Set some boto3 clients
 ddb_client = boto3.client('dynamodb')
@@ -121,8 +133,17 @@ def lambda_handler(event, context) -> dict:
     # Get the template
     try:
         response = s3_client.get_object(Bucket=S3_BUCKET, Key=template_name)
-        template = json.loads(response['Body'].read())
-        logger.debug("Provisioning template:\n{}".format(template))
+        text_template = response['Body'].read().decode('utf-8')
+        logger.debug("Provisioning template before update:\n{}".format(text_template))
+        # Update the template
+        rpl = {
+            "$DEVICE_POLICY_NAME$": DEVICE_POLICY,
+            "$TOKEN_EXCHANGE_ROLE_ALIAS_POLICY_NAME$": TOKEN_POLICY,
+        }
+        for k, v in rpl.items():
+            text_template = text_template.replace(k, v)
+        template = json.loads(text_template)
+        logger.debug("Provisioning template after update:\n{}".format(template))
     except Exception as e:
         logger.critical("Exception when reading Provisioning Template {} from S3:\n{}".format(template_name, e))
         return bad_request(msg="The provisioning template could not be read")

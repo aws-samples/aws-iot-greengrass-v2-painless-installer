@@ -29,16 +29,21 @@ DDB_TABLE = os.environ.get("DYNAMO_TABLE_NAME")
 if not DDB_TABLE:
     raise Exception("Environment variable DYNAMO_TABLE_NAME missing")
 
-# S3 bucket containing the template documents
-S3_BUCKET = os.environ.get("S3_BUCKET_NAME")
+# S3 bucket containing the greengrass configuration files
+S3_BUCKET = os.environ.get("S3_BUCKET_GG_CONFIGS")
 if not S3_BUCKET:
-    raise Exception("Environment variable S3_BUCKET_NAME missing")
+    raise Exception("Environment variable S3_BUCKET_GG_CONFIGS missing")
 
-# Provisioning Template to use
-GG_CONFIG_TEMPLATE = os.environ.get("GG_CONFIG_TEMPLATE", "ggi_default_greengrass-config-template.yaml")
+# Greengrass config file to use by default
+GG_CFG_FILE = os.environ.get("DEFAULT_GREENGRASS_CONFIG_FILE")
+if not GG_CFG_FILE:
+    raise Exception("Environment variable DEFAULT_GREENGRASS_CONFIG_FILE missing.")
 
-# Constants
-IOT_ROLE_ALIAS = "ggi_GreengrassCoreTokenExchangeRoleAlias"
+# Greengrass Token Exchange Role Alias
+IOT_ROLE_ALIAS = os.environ.get("TOKEN_EXCHANGE_ROLE_ALIAS")
+if not IOT_ROLE_ALIAS:
+    raise Exception("Environment variable TOKEN_EXCHANGE_ROLE_ALIAS missing.")
+
 
 # Set some boto3 clients
 ddb_client = boto3.client('dynamodb')
@@ -107,7 +112,7 @@ def lambda_handler(event, context) -> dict:
         # Retrieve parameters and check status of the provisioning request
         try:
             parameters = event['queryStringParameters']
-            template_name = parameters.get('greengrassConfigTemplate', GG_CONFIG_TEMPLATE)
+            template_name = parameters.get('greengrassConfigTemplate', GG_CFG_FILE)
             item = get_ddb_item(pkey='transactionId', pvalue=parameters['transactionId'],
                                 skey='deviceId', svalue=parameters['deviceId'],
                                 table=DDB_TABLE, ddb_client=ddb_client)

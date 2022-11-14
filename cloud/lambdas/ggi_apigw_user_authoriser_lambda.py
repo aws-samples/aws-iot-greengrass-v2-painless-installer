@@ -24,15 +24,14 @@ import boto3
 from uuid import uuid4
 
 # Cognito Configuration
-# TODO: simplify by detecting automatically when possible
-COG_POOL = os.environ.get("COGNITO_USER_POOL_ID")
-if not COG_POOL:
+COG_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID")
+if not COG_USER_POOL_ID:
     raise Exception("Environment variable COGNITO_USER_POOL_ID missing")
 COG_URL = os.environ.get("COGNITO_URL")
 if not COG_URL:
     raise Exception("Environment variable COGNITO_URL missing")
-COG_CID = os.environ.get("COG_CLIENT_ID")
-if not COG_CID:
+COG_C_NAME = os.environ.get("COGNITO_CLIENT_NAME")
+if not COG_C_NAME:
     raise Exception("Environment variable COG_CLIENT_ID missing")
 
 # Set some boto3 clients
@@ -87,7 +86,14 @@ def get_authorizer_allow_policy(user_info: dict, event: dict) -> dict:
 
 
 def lambda_handler(event, context):
-    logger.debug(event)
+
+    cid = get_cognito_client_id_from_name(cog_client=boto3.client('cognito-idp'),
+                                          pool_id=COG_USER_POOL_ID,
+                                          name=COG_C_NAME)
+    if not cid:
+        logger.critical("Couldn't determine the Cognito Client ID from its name: {}".format(COG_C_NAME))
+        unauthorised()
+
     resource = event.get('resource')
     # Limit the access to specific API Gateway resources
     if resource not in AUTHORIZED_RESOURCES:
@@ -103,9 +109,9 @@ def lambda_handler(event, context):
     tokens = get_tokens_from_code(authorization_code=code,
                                   redirect_uri=get_redirect_uri(event),
                                   client_secret=get_user_pool_secret(cog_client=cog_client,
-                                                                     user_pool_id=COG_POOL,
-                                                                     client_id=COG_CID),
-                                  client_id=COG_CID,
+                                                                     user_pool_id=COG_USER_POOL_ID,
+                                                                     client_id=cid),
+                                  client_id=cid,
                                   cognito_url=COG_URL
                                   )
     if not tokens:

@@ -42,19 +42,19 @@ import os
 import json
 from uuid import uuid4
 from datetime import datetime
+from urllib.parse import urlencode, quote
 
 # Cognito Configuration
-# TODO: simplify by detecting automatically when possible
 COG_GRP = os.environ.get("COGNITO_PROV_GROUP", "GreengrassProvisioningOperators")
-COG_POOL = os.environ.get("COGNITO_USER_POOL_ID")
-if not COG_POOL:
+COG_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID")
+if not COG_USER_POOL_ID:
     raise Exception("Environment variable COGNITO_USER_POOL_ID missing")
 COG_URL = os.environ.get("COGNITO_URL")
 if not COG_URL:
     raise Exception("Environment variable COGNITO_URL missing")
-COG_CID = os.environ.get("COG_CLIENT_ID")
-if not COG_CID:
-    raise Exception("Environment variable COG_CLIENT_ID missing")
+COG_C_NAME = os.environ.get("COGNITO_CLIENT_NAME")
+if not COG_C_NAME:
+    raise Exception("Environment variable COGNITO_CLIENT_NAME missing")
 
 # DynamoDB configuration
 DDB_TABLE = os.environ.get("DYNAMO_TABLE_NAME")
@@ -62,9 +62,6 @@ if not DDB_TABLE:
     raise Exception("Environment variable DYNAMO_TABLE_NAME missing")
 
 # API Gateway configuration
-API_URL = os.environ.get("API_BASE_URL")
-if not API_URL:
-    raise Exception("Environment variable API_ENDPOINT missing")
 OPS_ENDPOINT = "manage/request/"
 
 # SES Configuration
@@ -79,9 +76,9 @@ ddb_client = boto3.client('dynamodb')
 ses_client = boto3.client("ses")
 
 
-def find_confirmed_user_in_group(user_name: str, users: dict) -> dict:
+def find_user_in_group(user_name: str, users: dict) -> dict:
     """
-    Find a user with confirmed email address
+    Find a user in a group
     :param user_name: user name
     :param users: the dictionary of users returned by Cognito
     :return: the user of an empty dict
@@ -89,14 +86,13 @@ def find_confirmed_user_in_group(user_name: str, users: dict) -> dict:
     # logger.debug("Users received: {}".format(users))
     for user in users:
         if user['Username'] == user_name:
-            if user['UserStatus'] == "CONFIRMED":
-                return user
-            else:
-                return {}
+            return user
+        else:
+            return {}
     return {}
 
 
-def get_user_from_group(user_name: str, pool_id: str = COG_POOL, group: str = COG_GRP) -> dict:
+def get_user_from_group(user_name: str, pool_id: str = COG_USER_POOL_ID, group: str = COG_GRP) -> dict:
     """
     Searches for a confirmed User in the specified group
     :param user_name: Username
@@ -113,8 +109,7 @@ def get_user_from_group(user_name: str, pool_id: str = COG_POOL, group: str = CO
         UserPoolId=pool_id,
         GroupName=group
     )
-    # FIXME: move this to the function to avoid parsing the nextToken if we had a hit but email was not confirmed
-    user = find_confirmed_user_in_group(user_name, resp.get('Users'))
+    user = find_user_in_group(user_name, resp.get('Users'))
     if not user:
         nextToken = resp.get('nextToken')
         while nextToken:
@@ -123,13 +118,16 @@ def get_user_from_group(user_name: str, pool_id: str = COG_POOL, group: str = CO
                 GroupName=group,
                 nextToken=nextToken
             )
-            user = find_confirmed_user_in_group(user_name, resp.get('Users'))
+            user = find_user_in_group(user_name, resp.get('Users'))
             if not user:
                 nextToken = resp.get('nextToken')
             else:
                 break
-    logger.debug("Found User: '{}'".format(user))
-    return user
+    if user.get('UserStatus') == "CONFIRMED":
+        logger.debug("Found User: '{}'".format(user))
+        return user
+    else:
+        return {}
 
 
 def get_user_email(user: dict) -> str:
@@ -261,11 +259,12 @@ def new_xaction_record(thing_name: str, device_id: str, username: str, email: st
     }
 
 
-def send_email(transaction_id: str, device_id: str, thing_name: str, recipient: str, api_url: str = API_URL,
-               source: str = SES_SENDER):
+def send_email(transaction_id: str, device_id: str, thing_name: str, recipient: str, cog_cid: str,
+               api_url: str, cog_url: str = COG_URL, source: str = SES_SENDER):
     """
-    FIXME use urllib.parse.urlencode to create the state string. This should allow to support spaces in strings
     Sends an email to the user containing links to allow or deny the provisioning request
+    :param cog_url: Cognito domain URL
+    :param cog_cid: Cognito Client ID
     :param transaction_id: provisioning request transaction ID
     :param device_id: device identifier like the serial number
     :param thing_name: Iot Core Thing Name
@@ -274,9 +273,12 @@ def send_email(transaction_id: str, device_id: str, thing_name: str, recipient: 
     :param source: the email sender
     :return: the response from SES (dict)
     """
-    auth_url = '{0}/login?client_id={1}&response_type=code'.format(COG_URL, COG_CID)
-    state_allow = '&state=action=allow+transactionId={0}+deviceId={1}'.format(transaction_id, device_id)
-    state_deny = '&state=action=deny+transactionId={0}+deviceId={1}'.format(transaction_id, device_id)
+    auth_url = '{0}/login?client_id={1}&response_type=code'.format(cog_url, cog_cid)
+    params = {'action': "allow", 'transactionId': transaction_id, 'deviceId': device_id}
+    # Need to quote twice on top of urlencode to escape the & present in the state value which is decode by API Gateway
+    state_allow = '&state={}'.format(quote(quote(urlencode(params))))
+    params['action'] = 'deny'
+    state_deny = '&state={}'.format(quote(quote(urlencode(params))))
     redirect = '&redirect_uri={0}/{1}'.format(api_url, OPS_ENDPOINT)
 
     data = 'The device {0} is requesting to be provisioned on AWS IoT as a Thing named {1}.<br>' \
@@ -314,6 +316,15 @@ def lambda_handler(event, context):
         logger.debug("Received query string parameters: userName = '{}', thingName = '{}', "
                      "deviceId = '{}'".format(user_name, thing_name, device_id))
 
+        api_url = "https://{}/{}".format(event["requestContext"]["domainName"], event["requestContext"]["stage"])
+
+        cog_cid = get_cognito_client_id_from_name(cog_client=boto3.client('cognito-idp'),
+                                                  pool_id=COG_USER_POOL_ID,
+                                                  name=COG_C_NAME)
+        if not cog_cid:
+            logger.critical("Couldn't determine the Cognito Client ID from its name: {}".format(COG_C_NAME))
+            return internal_error()
+
         if is_valid_thing_name(thing_name) is not True:
             logger.warning("Invalid Thing Name requested: '{}'".format(thing_name))
             return bad_request("Invalid Thing Name: {}".format(thing_name))
@@ -322,7 +333,7 @@ def lambda_handler(event, context):
         user = get_user_from_group(user_name=user_name)
         if not user:
             logger.warning("A confirmed User '{}' was not found in "
-                           "group '{}' of pool '{}'".format(user_name, COG_GRP, COG_POOL))
+                           "group '{}' of pool '{}'".format(user_name, COG_GRP, COG_USER_POOL_ID))
             return bad_request("Request rejected")
         email = get_user_email(user)
         if not email:
@@ -362,7 +373,10 @@ def lambda_handler(event, context):
         resp = send_email(transaction_id=xaction['transactionId'],
                           device_id=device_id,
                           thing_name=thing_name,
-                          recipient=email)
+                          recipient=email,
+                          cog_cid=cog_cid,
+                          api_url=api_url
+                          )
 
         logger.debug("Email sending response: {}".format(resp))
 

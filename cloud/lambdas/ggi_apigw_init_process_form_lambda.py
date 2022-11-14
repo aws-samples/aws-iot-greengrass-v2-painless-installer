@@ -37,16 +37,24 @@ if not COG_POOL:
 COG_URL = os.environ.get("COGNITO_URL")
 if not COG_URL:
     raise Exception("Environment variable COGNITO_URL missing")
-COG_CID = os.environ.get("COG_CLIENT_ID")
+COG_CID = os.environ.get("COGNITO_CLIENT_ID")
 if not COG_CID:
-    raise Exception("Environment variable COG_CLIENT_ID missing")
+    raise Exception("Environment variable COGNITO_CLIENT_ID missing")
 S3_RESOURCES = os.environ.get("S3_RESOURCES_BUCKET")
 if not S3_RESOURCES:
     raise Exception("Environment variable S3_RESOURCES_BUCKET missing")
 S3_OUTPUTS = os.environ.get("S3_DOWNLOAD_BUCKET")
-if not S3_RESOURCES:
+if not S3_OUTPUTS:
     raise Exception("Environment variable S3_DOWNLOADS_BUCKET missing")
-INSTALLER_SCRIPT = os.environ.get("INSTALLER_SCRIPT_NAME", "install_gg.py")
+INSTALLER_SCRIPT = os.environ.get("DEFAULT_INSTALLER_SCRIPT_NAME")
+if not INSTALLER_SCRIPT:
+    raise Exception("Environment variable INSTALLER_SCRIPT_NAME missing.")
+GG_CFG_FILE = os.environ.get("DEFAULT_GREENGRASS_CONFIG_FILE")
+if not GG_CFG_FILE:
+    raise Exception("Environment variable DEFAULT_GREENGRASS_CONFIG_FILE missing.")
+THING_PROV_TEMPLATE = os.environ.get("DEFAULT_THING_PROVISIONING_TEMPLATE")
+if not THING_PROV_TEMPLATE:
+    raise Exception("Environment variable DEFAULT_THING_PROVISIONING_TEMPLATE missing.")
 
 # Set some boto3 clients
 cog_client = boto3.client('cognito-idp')
@@ -63,7 +71,6 @@ def bad_request(msg: str, status_code: int = 403) -> dict:
     :param status_code: error code
     :return: response
     """
-    # TODO: Make better HTML response for the user
     return {
         'statusCode': status_code,
         'headers': {'Content-Type': "application.json"},
@@ -108,9 +115,11 @@ def get_form_elements(event: dict) -> dict:
     :return: dictionary with form elements
     """
     params = event['body']
-    d = {}
     if params:
-        d = parse_qs(params)
+        parsed = parse_qs(params)
+    d = {}
+    for k, v in parsed.items():
+        d[k] = v[0]
     logger.debug("Form Elements: {}".format(d))
     return d
 
@@ -264,16 +273,20 @@ def lambda_handler(event, context) -> dict:
         if not ('thingName' in params and 'deviceId' in params):
             return bad_request("Malformed Form data")
         msg = ""
-        thing_name = params['thingName'][0]
-        device_id = params['deviceId'][0]
+        thing_name = params['thingName']
+        device_id = params['deviceId']
+        installer_script = params.get('installScript', INSTALLER_SCRIPT)
+        gg_cfg_file = params.get('greengrasConfigFile', GG_CFG_FILE)
+        thing_prov_template = params.get('thingProvisioningTemplate', THING_PROV_TEMPLATE)
+
         # Check validity of the elements
         if not is_valid_thing_name(thing_name):
-            msg += "Thing Name must comply with specification: '{}'\n".format("^[0-9a-zA-Z:\-_]*$")
+            msg += "Thing Name must comply with specification: '{}'".format("[0-9a-zA-Z:\-_]*$")
         if not is_new_iot_thing(thing_name=thing_name, iot_client=iot_client):
-            msg += "This Thing Name is already used: {}".format(thing_name)
-        if " " in device_id:
-            # FIXME: remove if/when spaces are supported
-            msg += "Device Id cannot contain spaces\n"
+            msg += "\nThis Thing Name is already used: {}".format(thing_name)
+        if not is_valid_thing_attribute(device_id):
+            msg += "\nDevice ID must comply with IoT Thing Attribute specification: " \
+                   "'{}'".format("[a-zA-Z0-9_.,@/:#-]*$")
         if msg:
             return bad_request(msg=msg)
 
@@ -295,12 +308,14 @@ def lambda_handler(event, context) -> dict:
                      '$THING_NAME$': thing_name,
                      '$DEVICE_SERIAL$': device_id,
                      '$API_URI$': api_uri,
-                     '$TOKEN$': token
+                     '$TOKEN$': token,
+                     '$GG_CFG_FILE$': gg_cfg_file,
+                     '$THING_PROV_TEMPLATE$': thing_prov_template
                      }
         logger.debug("Config String:\n{}".format(cfg_const))
 
         # Fetch the raw script from S3 and replace the constant values
-        script = get_installer_script(installer_script=INSTALLER_SCRIPT, bucket=S3_RESOURCES)
+        script = get_installer_script(installer_script=installer_script, bucket=S3_RESOURCES)
         if not script:
             logger.critical("Could not read the script from S3.")
             return internal_error()
@@ -309,7 +324,7 @@ def lambda_handler(event, context) -> dict:
             script = script.replace(k, v, 1)
 
         # Save to S3 and get a pre-signed URL
-        out_file_name = "{}-{}-{}".format(thing_name, device_id, INSTALLER_SCRIPT)
+        out_file_name = "{}-{}".format(thing_name, installer_script)
         if write_to_s3(bucket=S3_OUTPUTS, key=out_file_name, data=script, s3_client=s3_client) is not True:
             logger.critical("Could not write the script to S3.")
             return internal_error()
