@@ -17,8 +17,6 @@ This script will install AWS IoT Greengrass Version 2 (latest) and provision a n
 account. It interacts with Amazon API Gateway and Amazon Cognito running in your account and expects that you have
 deployed the matching AWS CloudFormation template, and created at least one Cognito User allowed to provision devices.
 See the readme.md documentation for further details.
-
-Version of this script: 1.0.0
 """
 import json
 import typing
