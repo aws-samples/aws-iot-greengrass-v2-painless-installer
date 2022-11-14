@@ -38,11 +38,13 @@ This application should be deployed using the AWS Cloud Development Kit (AWS CDK
 The CDK Stack has been written in Python 3 to stay consistent with the application language.
 In a nutshell, after installing a stable version of Node.js:
 
-<code>
+
+```bash
 npm install -g aws-cdk
 pip3 install -r requirements.txt
 cdk deploy
-</code>
+```
+
 
 In addition to providing the account ID, region and credentials to CDK, 
 you will have to declare two environment variables:
