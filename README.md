@@ -12,8 +12,7 @@ The architecture uses a minimum number of AWS services to keep it easy to mainta
 Amazon DynamoDB tracks the state of each installation process.
 A combination of Amazon API Gateway resources and AWS Lambda functions takes care of the various actions to be
 performed.
-Amzon S3 buckets store the various scripts and templates used in the process. Those
-can be further customized as necessary.
+Amazon S3 buckets store the various scripts and templates used in the process. Those can be customized as necessary.
 ![Architecture Diagram](./doc/ArchitectureDiagrams-OverallArchitecture.png)
 
 ### API Endpoints
@@ -36,9 +35,8 @@ This script is customised for this provisioning and contains a time-limited acce
   * Stores locally the signed certificate received in the response.
   * Fetches a Greengrass Configuration Template from the backend. This template has been customised by the backend 
 with all the necessary cloud-side information.
-  * Downloads the latest Greengrass package.
   * Finishes customising the Greengrass Configuration Template with local information.
-  *  Runs the Greengrass installer
+  * Runs the Greengrass installer included in the downloaded archive.
   * Et voilà!
 
 ## Solution deployment on your AWS account
@@ -48,9 +46,13 @@ The CDK Stack has been written in Python 3 to stay consistent with the applicati
 As a summary, after installing a stable version of Node.js:
 
 ```bash
+# Install the AWS CDK in Node.js
 npm install -g aws-cdk
+# Install the python3 packages required by CDK to generate the CloudFormation template
 pip3 install -r requirements.txt
+# If new account, you need to bootstrap the CDK (there is no risk to run it again...)
 cdk bootstrap
+# Then deploy the solution on your account
 cdk deploy
 ```
 
@@ -67,17 +69,27 @@ you will have to declare two environment variables:
 documentation: https://docs.aws.amazon.com/ses/latest/dg/request-production-access.html
 
 Once deployed:
-* Create users in Cognito
+* Create users in Cognito (enable invitation message to be sent to each user)
 * Add them to the User Group created by the CDK (by default: `GreengrassProvisioningOperators`)
-* Make sure to verify the Users email
+* Make sure that users validate their email address
 
 ## Usage
 All you have to do is:
 
 1. Note the Output, provided by the CDK deployment, giving you the URL of the API.
-2. from a web browser, hit this URL with the endpoint /manage/init/ 
-    (for instance https://xlevm4nzib.execute-api.eu-central-1.amazonaws.com/prod/manage/init)
+2. From a web browser, hit this URL with the endpoint /manage/init/ 
+    (for instance https://something.execute-api.eu-central-1.amazonaws.com/prod/manage/init)
 3. Follow the instructions
+
+You can test the process from an `Amazon Linux 2` EC2 instance (t2.micro is sufficient for testing). 
+After launching the instance and connecting to it, you'll have to install Java with:
+
+```
+sudo amazon-linux-extras install java-openjdk11 -y
+```
+
+Once done you can terminate the instance and delete the Greengrass Code device, the IoT Thing and the 
+Certificate created in IoT Core.
 
 ## Good to know
 Five buckets are deployed by CDK:
@@ -88,18 +100,21 @@ Five buckets are deployed by CDK:
   to this Bucket and they will be listed as options in the selection form if their extension is `.json`.
 * **GreengrassConfig**: This is where the IoT Greengrass Configuration File is stored. You can add customized configurations
   to this Bucket and they will be listed as options in the selection form if their extension is `.yaml`.
-* **GreengrassArtifacts**: This Bucket is empty. It is where the deployable Greegrass artifacts should be stored. This
-  Bucket is created at this time to be able to set read access for the Greegrass devices.
+* **GreengrassArtifacts**: This Bucket is empty. It is where the deployable Greengrass artifacts should be stored. This
+  Bucket is created at this time to be able to set read access for the Greengrass devices.
 * **Downloads**: This is where the installations script is stored after being customised. It is then downloaded manually
   with a pre-signed URL provided to you in the process.
 
 Bear in mind that CDK will customise the above Bucket names to make them unique. So you'll have to 
 interpret what you read!
 
-Logs are enabled by default for the Lambda functions. Log level can be set indivdually for each function using an
+Logs are enabled by default for the Lambda functions. Log level can be set individually for each function using an
 environment variable.
 
-At this point Amazon API Gateway logs have to be enabled manually.
+Amazon API Gateway logs have to be enabled manually to avoid the risk of modifying existing configurations. 
+A role with a name starting with `GreengrassInstallerStack-CWRole` is created by the CDK for allowing API Gateway to 
+log to CloudWatch. The instructions on how to enable logging can be found here: 
+https://aws.amazon.com/premiumsupport/knowledge-center/api-gateway-cloudwatch-logs/
 
 ## Planned features
 
@@ -109,4 +124,7 @@ At this point Amazon API Gateway logs have to be enabled manually.
 
 * Only Linux devices are supported.
 
+## More
 
+If you're looking for a feature-rich and ready to use machine-to-cloud connectivity solution, you will be interested in 
+this very nice AWS Solution: https://aws.amazon.com/solutions/implementations/machine-to-cloud-connectivity-framework/
