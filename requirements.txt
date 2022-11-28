@@ -4,6 +4,8 @@ botocore == 1.23.32
 
 # For development purpose only - not for prod
 pipdeptree==2.3.3
+dep-license
+pip-licenses
 
 # AWS CDK
 aws-cdk-lib==2.50.0
