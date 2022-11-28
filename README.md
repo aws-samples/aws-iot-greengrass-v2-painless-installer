@@ -43,6 +43,8 @@ with all the necessary cloud-side information.
 
 This application should be deployed using the AWS Cloud Development Kit (AWS CDK).
 The CDK Stack has been written in Python 3 to stay consistent with the application language.
+After installation all the operators will be able to provision a Greengrass V2 device in a few minutes without
+requiring access to the AWS account.
 As a summary, after installing a stable version of Node.js:
 
 ```bash
