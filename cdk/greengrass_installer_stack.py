@@ -21,9 +21,7 @@ from cdk.s3_setup import S3Setup
 from cdk.dynamodb_setup import DynamodbSetup
 from cdk.iot_core_setup import IotCoreSetup
 from cdk.api_lambda_endpoint import ApiEndpointConfig
-
-import random
-import string
+from cdk_nag import NagSuppressions
 
 
 class GreengrassInstallerStack(Stack):
@@ -32,7 +30,27 @@ class GreengrassInstallerStack(Stack):
                  env: RuntimeEnvVars, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        # Define the AWs scope
+        # Define Stack level CDK-NAG suppressions
+        NagSuppressions.add_stack_suppressions(
+            self,
+            [{'id': "AwsSolutions-IAM4",
+              'reason': "Default policy allowing logging only",
+              'applies_to':
+                  [
+                      "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+                      "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+                  ]
+              },
+             {'id': "AwsSolutions-IAM5",
+              'reason': "Lambda needs access to all objects in this bucket / Log-stream are created automatically",
+              'applies_to': [
+                  "Action::s3:*",
+                  "Resource::arn:aws:logs:<AWS::Region>:<AWS::AccountId>:log-group:*:log-stream:*"
+              ]
+              }
+             ])
+
+        # Define the AWS scope
         aws_scope = ScopedAws(self)
 
         # Set a few constants to simplify code updates
@@ -73,9 +91,53 @@ class GreengrassInstallerStack(Stack):
                 iam.ManagedPolicy.from_aws_managed_policy_name("service-role/AmazonAPIGatewayPushToCloudWatchLogs")])
         cfn_account = apigw.CfnAccount(self, "account",
                                        cloud_watch_role_arn=cw_role.role_arn)
+
+        # Initiate  Cognito - more config later...
+        cognito_pool = cognito.UserPool(self, "GGIPool",
+                                        user_pool_name="ggipool",
+                                        sign_in_aliases=cognito.SignInAliases(email=True, username=True),
+                                        self_sign_up_enabled=False,
+                                        removal_policy=RemovalPolicy.DESTROY,
+                                        email=cognito.UserPoolEmail.with_cognito(),
+                                        standard_attributes=cognito.StandardAttributes(
+                                            family_name=cognito.StandardAttribute(required=True, mutable=True),
+                                            given_name=cognito.StandardAttribute(required=True, mutable=True),
+                                            email=cognito.StandardAttribute(required=True, mutable=True)
+                                        ),
+                                        password_policy=cognito.PasswordPolicy(min_length=8, require_digits=True,
+                                                                               require_lowercase=True,
+                                                                               require_uppercase=True,
+                                                                               require_symbols=True)
+                                        )
+        cognito_pool.node.default_child.UserPoolAddOnsProperty(advanced_security_mode="ENFORCED")
+        NagSuppressions.add_resource_suppressions(cognito_pool,
+                                                  [
+                                                      {
+                                                          'id': "AwsSolutions-COG2",
+                                                          'reason': "MFA use to be decided by customer",
+                                                      },
+                                                      {
+                                                          'id': "AwsSolutions-COG3",
+                                                          'reason': " AdvancedSecurityMode is ENFORCED just above!",
+                                                      }
+                                                  ])
+
+        # Define the authorizers for this API
+        api_auth_cognito = apigw.CognitoUserPoolsAuthorizer(self, "CognitoAuthorizer",
+                                                            cognito_user_pools=[cognito_pool],
+                                                            results_cache_ttl=Duration.seconds(0)
+                                                            )
+
         # define API gateway and its Production Stage
         api_prod_logs_grp = logs.LogGroup(self, "ApiGatewayAccessLogs",
                                           retention=aws_logs.RetentionDays.THREE_MONTHS)
+
+        default_method_options = apigw.MethodOptions(
+            authorization_type=apigw.AuthorizationType.COGNITO,
+            authorizer=api_auth_cognito,
+            authorization_scopes=None
+        )
+
         api = apigw.RestApi(
             self, "GGIApi",
             rest_api_name="ggprovisioning",
@@ -83,21 +145,32 @@ class GreengrassInstallerStack(Stack):
                 allow_origins=apigw.Cors.ALL_ORIGINS,
                 allow_methods=apigw.Cors.ALL_METHODS
             ),
-            # Uncomment below when CDK ace condition owth new account is fixed
-            # deploy_options=apigw.StageOptions(
-            #     access_log_destination=apigw.LogGroupLogDestination(api_prod_logs_grp),
-            #     access_log_format=apigw.AccessLogFormat.json_with_standard_fields(
-            #         caller=True,
-            #         http_method=True,
-            #         ip=True,
-            #         protocol=True,
-            #         request_time=True,
-            #         resource_path=True,
-            #         response_length=True,
-            #         status=True,
-            #         user=True)
-            # ),
+            # default_method_options=default_method_options,
+            deploy=True,
+            # Uncomment below when CDK race condition with new account is fixed
+            deploy_options=apigw.StageOptions(
+                logging_level=apigw.MethodLoggingLevel.INFO,
+                access_log_destination=apigw.LogGroupLogDestination(api_prod_logs_grp),
+                access_log_format=apigw.AccessLogFormat.json_with_standard_fields(
+                    caller=True,
+                    http_method=True,
+                    ip=True,
+                    protocol=True,
+                    request_time=True,
+                    resource_path=True,
+                    response_length=True,
+                    status=True,
+                    user=True)
+            ),
             cloud_watch_role=False
+        )
+        NagSuppressions.add_resource_suppressions(
+            api.deployment_stage, [
+                {
+                    'id': "AwsSolutions-APIG3",
+                    'reason': "WAF not necessary in this context.",
+                    'apply_to_children': True
+                }, ]
         )
         '''
         deployment = apigw.Deployment(self, "Deployment", api=api)
@@ -154,20 +227,7 @@ class GreengrassInstallerStack(Stack):
                                                      schema=model_prov_schema,
                                                      )
 
-        # Configure Cognito
-        cognito_pool = cognito.UserPool(self, "GGIPool",
-                                        user_pool_name="ggipool",
-                                        sign_in_aliases=cognito.SignInAliases(email=True, username=True),
-                                        self_sign_up_enabled=False,
-                                        removal_policy=RemovalPolicy.DESTROY,
-                                        email=cognito.UserPoolEmail.with_cognito(),
-                                        standard_attributes=cognito.StandardAttributes(
-                                            family_name=cognito.StandardAttribute(required=True, mutable=True),
-                                            given_name=cognito.StandardAttribute(required=True, mutable=True),
-                                            email=cognito.StandardAttribute(required=True, mutable=True)
-                                        )
-                                        )
-
+        # Continue Cognito config
         cognito_domain = cognito_pool.add_domain(
             "CognitoDomain",
             cognito_domain=cognito.CognitoDomainOptions(
@@ -242,12 +302,7 @@ class GreengrassInstallerStack(Stack):
         env.cognito_pool_gginstaller_client_id.value = cognito_pool_client_gginstaller.user_pool_client_id
         env.cognito_pool_operator_client_name.value = "operator"  # Set here to avoid circular dependency
 
-        # Define the authorizers for this API
-        api_auth_cognito = apigw.CognitoUserPoolsAuthorizer(self, "CognitoAuthorizer",
-                                                            cognito_user_pools=[cognito_pool],
-                                                            results_cache_ttl=Duration.seconds(0)
-                                                            )
-
+        # Define Custom Authoriser
         api_auth_custom = ApiUserAuthorizer(self, "UserLambdaAuthorizer",
                                             env=env,
                                             runtime=LAMBDA_RUNTIME,
@@ -322,6 +377,18 @@ class GreengrassInstallerStack(Stack):
             "cognito-idp:Describe*",
             "cognito-idp:List*"
         )
+        NagSuppressions.add_resource_suppressions_by_path(
+            self,
+            api_ep_manage_init_get.method.node.path + "/Resource", [
+                {
+                    'id': 'AwsSolutions-APIG4',
+                    'reason': 'This Method is public by design. The Lambda redirects to Cognito',
+                },
+                {
+                    'id': 'AwsSolutions-COG4',
+                    'reason': 'This Method is public by design. The Lambda redirects to Cognito',
+                },
+            ])
 
         # manage/init/form GET - Must not require Auth
         api_ep_manage_init_form_get = ApiEndpointConfig(
@@ -345,6 +412,18 @@ class GreengrassInstallerStack(Stack):
         s3_res.scripts_bucket.grant_read(api_ep_manage_init_form_get.function)
         s3_res.gg_config_bucket.grant_read(api_ep_manage_init_form_get.function)
         s3_res.prov_templates_bucket.grant_read(api_ep_manage_init_form_get.function)
+        NagSuppressions.add_resource_suppressions_by_path(
+            self,
+            api_ep_manage_init_form_get.method.node.path + "/Resource", [
+                {
+                    'id': 'AwsSolutions-APIG4',
+                    'reason': 'This Method is public by default. The form contains a Token Code.',
+                },
+                {
+                    'id': 'AwsSolutions-COG4',
+                    'reason': 'This Method is public by default. The form contains a Token Code.',
+                },
+            ])
 
         # init/form POST
         api_ep_manage_init_form_post = ApiEndpointConfig(
@@ -377,6 +456,13 @@ class GreengrassInstallerStack(Stack):
         api_ep_manage_init_form_post.function.role.add_managed_policy(
             iam.ManagedPolicy.from_aws_managed_policy_name("AWSIoTConfigReadOnlyAccess")
         )
+        NagSuppressions.add_resource_suppressions_by_path(self,
+                                                          api_ep_manage_init_form_post.method.node.path + "/Resource", [
+                                                              {
+                                                                  'id': 'AwsSolutions-COG4',
+                                                                  'reason': 'This Method has a custom authorizer',
+                                                              },
+                                                          ])
 
         # manage/request GET
         api_ep_manage_request_get = ApiEndpointConfig(
@@ -397,6 +483,13 @@ class GreengrassInstallerStack(Stack):
             authorization_scopes=None
         )
         dynamodb.table.grant_read_write_data(api_ep_manage_request_get.function)
+        NagSuppressions.add_resource_suppressions_by_path(self,
+                                                          api_ep_manage_request_get.method.node.path + "/Resource", [
+                                                              {
+                                                                  'id': 'AwsSolutions-COG4',
+                                                                  'reason': 'This Method has a custom authorizer',
+                                                              },
+                                                          ])
 
         # provision/greengrass-config GET
         api_ep_provision_greengrass_config_get = ApiEndpointConfig(
@@ -538,3 +631,18 @@ class GreengrassInstallerStack(Stack):
             authorization_scopes=[apigw_scope_request]
         )
         dynamodb.table.grant_read_write_data(api_ep_request_update_get.function)
+
+        # Bad hack to remove errors related to OPTIONS resource not having an auth
+        for meth in api.node.find_all():
+            if meth.node.path.endswith("/OPTIONS/Resource") or meth.node.path.endswith("/OPTIONS"):
+                # print("Suppressing COG4 and APIG4 for {}".format(meth.node.path))
+                NagSuppressions.add_resource_suppressions_by_path(self, meth.node.path, [
+                    {
+                        'id': 'AwsSolutions-APIG4',
+                        'reason': 'OPTIONS is without Auth',
+                    },
+                    {
+                        'id': 'AwsSolutions-COG4',
+                        'reason': 'OPTIONS is without Auth',
+                    },
+                ])

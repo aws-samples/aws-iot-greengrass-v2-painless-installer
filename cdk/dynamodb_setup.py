@@ -3,6 +3,7 @@ from aws_cdk import (
     aws_dynamodb as dyndb
 )
 from cdk.environment_variables import RuntimeEnvVars
+from cdk_nag import NagSuppressions
 
 
 class DynamodbSetup(Construct):
@@ -15,6 +16,11 @@ class DynamodbSetup(Construct):
             partition_key=dyndb.Attribute(name="deviceId", type=dyndb.AttributeType.STRING),
             sort_key=dyndb.Attribute(name="transactionId", type=dyndb.AttributeType.STRING),
             billing_mode=dyndb.BillingMode.PAY_PER_REQUEST)
+        NagSuppressions.add_resource_suppressions(self._ddb_table,
+                                                  [{'id': "AwsSolutions-DDB3",
+                                                    'reason': "Not necessary for this table",
+                                                    }
+                                                   ])
 
         idx1 = "deviceId-transactionId-index"
         self._ddb_table.add_global_secondary_index(

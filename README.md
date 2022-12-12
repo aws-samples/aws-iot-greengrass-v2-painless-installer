@@ -93,6 +93,11 @@ sudo amazon-linux-extras install java-openjdk11 -y
 Once done you can terminate the instance and delete the Greengrass Code device, the IoT Thing and the 
 Certificate created in IoT Core.
 
+## Known Issues
+Deployment on an AWS Account which never had API Gateway configured might fail. This is due to the logging which is
+enabled in the CDK script. To solve the issue you can create a fake API and enable the logging. Then
+delete this API. Subsequent deployments should not fail.
+
 ## Good to know
 Five buckets are deployed by CDK:
 

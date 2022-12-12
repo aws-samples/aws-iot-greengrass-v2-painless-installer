@@ -5,12 +5,28 @@ from aws_cdk import (
     RemovalPolicy
 )
 from cdk.environment_variables import RuntimeEnvVars
-
+from cdk_nag import NagSuppressions, NagPackSuppression
 
 class S3Setup(Construct):
 
     def __init__(self, scope: Construct, id: str, env: RuntimeEnvVars, **kwargs) -> None:
         super().__init__(scope, id, **kwargs)
+
+        # Create a server access logs bucket
+        access_logs_bucket = s3.Bucket(self, "ServerLogs",
+                                       encryption=s3.BucketEncryption.S3_MANAGED,
+                                       block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+                                       enforce_ssl=True,
+                                       )
+
+        NagSuppressions.add_resource_suppressions(access_logs_bucket, [
+            {'id': "AwsSolutions-S1",
+             'reason': "Can't find how to enable logs on the logs bucket"
+             },
+            {'id': "AwsSolutions-S2",
+             'reason': "Can't find how to enable logs on the logs bucket"
+             },
+        ])
 
         # Bucket used for storing the customised installation scripts the User will run on the device
         self._downloads_bucket = s3.Bucket(self, "DownloadsBucket",
@@ -18,7 +34,9 @@ class S3Setup(Construct):
                                            encryption=s3.BucketEncryption.S3_MANAGED,
                                            enforce_ssl=True,
                                            versioned=False,
-                                           removal_policy=RemovalPolicy.RETAIN
+                                           removal_policy=RemovalPolicy.RETAIN,
+                                           server_access_logs_bucket=access_logs_bucket,
+                                           server_access_logs_prefix="DownloadsBucket",
                                            )
         env.s3_downloads_bucket.value = self._downloads_bucket.bucket_name
 
@@ -28,7 +46,9 @@ class S3Setup(Construct):
                                          encryption=s3.BucketEncryption.S3_MANAGED,
                                          enforce_ssl=True,
                                          versioned=True,
-                                         removal_policy=RemovalPolicy.RETAIN
+                                         removal_policy=RemovalPolicy.RETAIN,
+                                         server_access_logs_bucket=access_logs_bucket,
+                                         server_access_logs_prefix="ScriptsBucket"
                                          )
         env.s3_bucket_scripts.value = self._scripts_bucket.bucket_name
         s3deploy.BucketDeployment(self, "DeployScripts",
@@ -46,7 +66,9 @@ class S3Setup(Construct):
                                            encryption=s3.BucketEncryption.S3_MANAGED,
                                            enforce_ssl=True,
                                            versioned=True,
-                                           removal_policy=RemovalPolicy.RETAIN
+                                           removal_policy=RemovalPolicy.RETAIN,
+                                           server_access_logs_bucket=access_logs_bucket,
+                                           server_access_logs_prefix="GreengrassConfigBucket"
                                            )
         env.s3_bucket_greengrass_config.value = self._gg_config_bucket.bucket_name
         s3deploy.BucketDeployment(self, "DeployGreengrassConfig",
@@ -62,7 +84,9 @@ class S3Setup(Construct):
                                                 encryption=s3.BucketEncryption.S3_MANAGED,
                                                 enforce_ssl=True,
                                                 versioned=True,
-                                                removal_policy=RemovalPolicy.RETAIN
+                                                removal_policy=RemovalPolicy.RETAIN,
+                                                server_access_logs_bucket=access_logs_bucket,
+                                                server_access_logs_prefix="provTemplatesBucket"
                                                 )
         env.s3_bucket_provisioning_templates.value = self._prov_templates_bucket.bucket_name
         s3deploy.BucketDeployment(self, "DeployProvisioningTemplates",
@@ -78,7 +102,9 @@ class S3Setup(Construct):
                                                       encryption=s3.BucketEncryption.S3_MANAGED,
                                                       enforce_ssl=True,
                                                       versioned=False,
-                                                      removal_policy=RemovalPolicy.RETAIN
+                                                      removal_policy=RemovalPolicy.RETAIN,
+                                                      server_access_logs_bucket=access_logs_bucket,
+                                                      server_access_logs_prefix="greengrassArtifactsBucket"
                                                       )
         env.s3_greengrass_artifacts_bucket.value = self._greengrass_artifacts_bucket.bucket_name
 

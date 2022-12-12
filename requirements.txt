@@ -5,9 +5,10 @@ botocore == 1.23.32
 # For development purpose only - not for prod
 pipdeptree==2.3.3
 dep-license
-pip-licenses
+pip-licenses==4.0.3
 
 # AWS CDK
-aws-cdk-lib==2.50.0
-constructs==10.1.159
+aws-cdk-lib==2.54.0
+constructs==10.1.187
 pytest==7.2.0
+cdk-nag==2.21.29
