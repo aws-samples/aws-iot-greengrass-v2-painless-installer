@@ -9,6 +9,6 @@ pip-licenses==4.0.3
 
 # AWS CDK
 aws-cdk-lib==2.54.0
-constructs==10.1.187
+constructs==10.1.189
 pytest==7.2.0
-cdk-nag==2.21.29
+cdk-nag==2.21.31
