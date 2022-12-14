@@ -14,7 +14,7 @@
 
 """
 This is a Lambda Layer collecting a set of functions used by many of the Lambda Functions of this application
-User in Lamnda Fucntions with:
+User in Lambda Functions with:
    from ggi_lambda_utils import *
 """
 import logging

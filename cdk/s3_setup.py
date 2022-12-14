@@ -20,6 +20,7 @@ from aws_cdk import (
 from cdk.environment_variables import RuntimeEnvVars
 from cdk_nag import NagSuppressions, NagPackSuppression
 
+
 class S3Setup(Construct):
 
     def __init__(self, scope: Construct, id: str, env: RuntimeEnvVars, **kwargs) -> None:
