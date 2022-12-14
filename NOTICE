@@ -1,1 +1,14 @@
-Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+AWS IoT Greengrass V2 painless installer
+Copyright 2022 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+*********************
+EXTERNAL DEPENDENCIES
+*********************
+
+"pytest" - "MIT"
+"aws-cdk-lib" - "Apache-2.0"
+"botocore" - "Apache License 2.0"
+"constructs" - "Apache-2.0"
+"boto3" - "Apache License 2.0"
+
+

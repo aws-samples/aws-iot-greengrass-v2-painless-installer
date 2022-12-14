@@ -1,0 +1,46 @@
+{
+    "Parameters" : {
+        "ThingName" : {
+            "Type" : "String"
+        },
+        "deviceId" : {
+            "Type" : "String"
+        },
+        "CSR" : {
+            "Type" : "String"
+        }
+    },
+    "Resources" : {
+        "thing" : {
+            "Type" : "AWS::IoT::Thing",
+            "Properties" : {
+                "ThingName" : {"Ref" : "ThingName"},
+                "AttributePayload" : { "SerialNumber" :  {"Ref" : "deviceId"}}
+            },
+            "OverrideSettings" : {
+                "AttributePayload" : "FAIL",
+                "ThingTypeName" : "FAIL",
+                "ThingGroups" : "FAIL"
+            }
+        },
+        "certificate" : {
+            "Type" : "AWS::IoT::Certificate",
+            "Properties" : {
+                "CertificateSigningRequest": {"Ref" : "CSR"},
+                "Status" : "ACTIVE"
+            }
+        },
+        "tokenPolicy" : {
+            "Type" : "AWS::IoT::Policy",
+            "Properties" : {
+                "PolicyName" : "$TOKEN_EXCHANGE_ROLE_ALIAS_POLICY_NAME$"
+            }
+        },
+        "devicePolicy" : {
+            "Type" : "AWS::IoT::Policy",
+            "Properties" : {
+                "PolicyName" : "$DEVICE_POLICY_NAME$"
+            }
+        }
+    }
+}

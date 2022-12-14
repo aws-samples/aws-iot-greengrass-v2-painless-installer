@@ -1,0 +1,19 @@
+---
+system:
+  certificateFilePath: "$system.certificateFilePath$"
+  privateKeyPath: "$system.privateKeyPath$"
+  rootCaPath: "$system.rootCaPath$"
+  rootpath: "$system.rootpath$"
+  thingName: "$system.thingName$"
+services:
+  aws.greengrass.Nucleus:
+    componentType: "NUCLEUS"
+    version: "$services.aws.greengrass.Nucleus.version$"
+    configuration:
+      awsRegion: "$services.aws.greengrass.Nucleus.configuration.awsRegion$"
+      iotRoleAlias: "$services.aws.greengrass.Nucleus.configuration.iotRoleAlias$"
+      iotCredEndpoint: "$services.aws.greengrass.Nucleus.configuration.iotCredEndpoint$"
+      iotDataEndpoint: "$services.aws.greengrass.Nucleus.configuration.iotDataEndpoint"
+      mqtt:
+        port: 8883
+      greengrassDataPlanePort: 8443
