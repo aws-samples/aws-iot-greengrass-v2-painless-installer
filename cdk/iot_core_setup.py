@@ -39,16 +39,34 @@ class IotCoreSetup(Construct):
             "Statement": [
                 {
                     "Effect": "Allow",
-                    "Action": [
-                        "iot:Connect",
-                        "iot:Publish",
-                        "iot:Subscribe",
-                        "iot:Receive",
-                        "greengrass:*"
-                    ],
+                    "Action": ["iot:Connect"],
                     "Resource": [
-                        "arn:aws:iot:{}:{}:*".format(aws_scope.region, aws_scope.account_id)
+                        "arn:aws:iot:{}:{}:client/${{iot:Connection.Thing.ThingName}}".format(
+                            aws_scope.region, aws_scope.account_id)
                     ]
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": ["iot:Publish", "iot:Receive"],
+                    "Resource": [
+                        "arn:aws:iot:{}:{}:topic/$aws/things/${{iot:Connection.Thing.ThingName}}/*".format(
+                            aws_scope.region, aws_scope.account_id),
+                        "arn:aws:iot:{}:{}:topic/$aws/things/${{iot:Connection.Thing.ThingName}}".format(
+                            aws_scope.region, aws_scope.account_id)
+                    ]
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": ["iot:Subscribe"],
+                    "Resource": [
+                        "arn:aws:iot:{}:{}:topicfilter/$aws/things/${{iot:Connection.Thing.ThingName}}/*".format(
+                            aws_scope.region, aws_scope.account_id)
+                    ]
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": ["greengrass:*"],
+                    "Resource": ["*"]
                 }
             ]
         }

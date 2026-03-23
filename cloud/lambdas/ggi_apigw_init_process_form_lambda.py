@@ -25,7 +25,6 @@ The S3 pre-signed URL has a short validity period.
 """
 # Import the helper functions from the layer
 from ggi_lambda_utils import *
-from typing import List
 
 import boto3
 from urllib.parse import parse_qs
@@ -73,7 +72,7 @@ def bad_request(msg: str, status_code: int = 403) -> dict:
     """
     return {
         'statusCode': status_code,
-        'headers': {'Content-Type': "application.json"},
+        'headers': {'Content-Type': "application/json"},
         'body': json.dumps({'reason': msg})
     }
 
@@ -87,12 +86,12 @@ def internal_error(status_code: int = 500) -> dict:
     msg = "Something unexpected happened. Try again and contact support if the problem persists."
     return {
         'statusCode': status_code,
-        'headers': {'Content-Type': "application.json"},
+        'headers': {'Content-Type': "application/json"},
         'body': json.dumps({'reason': msg})
     }
 
 
-def get_authorizer_params(event: dict, to_retrieve: List[str]) -> dict:
+def get_authorizer_params(event: dict, to_retrieve: list[str]) -> dict:
     """
     Returns a dictionary containing the elements in to_retrieve fetched from the Authorizer parameters
     :param event: the event passed by API Gateway to the handler
@@ -281,7 +280,7 @@ def lambda_handler(event, context) -> dict:
 
         # Check validity of the elements
         if not is_valid_thing_name(thing_name):
-            msg += "Thing Name must comply with specification: '{}'".format("[0-9a-zA-Z:\-_]*$")
+            msg += "Thing Name must comply with specification: '{}'".format(r"[0-9a-zA-Z:\-_]*$")
         if not is_new_iot_thing(thing_name=thing_name, iot_client=iot_client):
             msg += "\nThis Thing Name is already used: {}".format(thing_name)
         if not is_valid_thing_attribute(device_id):

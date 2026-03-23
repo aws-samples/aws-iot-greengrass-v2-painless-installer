@@ -31,7 +31,7 @@ from email.message import Message
 from boto3 import client as botoclient
 from boto3.dynamodb.types import TypeSerializer, TypeDeserializer
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from base64 import b64encode
 
 # Set the logger and log level
@@ -212,7 +212,7 @@ def is_valid_thing_name(thing_name: str) -> bool:
     :param thing_name: The name to check
     :return: True of match or False
     """
-    pattern = "^[0-9a-zA-Z:\-_]*$"
+    pattern = r"^[0-9a-zA-Z:\-_]*$"
     return re.fullmatch(pattern=pattern, string=thing_name) is not None
 
 
@@ -222,7 +222,7 @@ def is_valid_thing_attribute(attribute: str) -> bool:
     :param attribute: The attribute to check
     :return: True of match or False
     """
-    pattern = "^[a-zA-Z0-9_.,@/:#-]*$"
+    pattern = r"^[a-zA-Z0-9_.,@/:#-]*$"
     return re.fullmatch(pattern=pattern, string=attribute) is not None and len(attribute) < 801
 
 
@@ -252,7 +252,7 @@ def update_request_status(current_request: dict, action: str, new_status: str, t
     :return: Nothing but might raise an exception if problem
     """
     history = current_request['history']
-    history[datetime.utcnow().isoformat()] = {'action': action,
+    history[datetime.now(timezone.utc).isoformat()] = {'action': action,
                                               'previous_status': str(current_request['currentStatus'])}
     attribute_value = {':cs': new_status,
                        ':h': history}
@@ -404,16 +404,16 @@ def get_cognito_client_id_from_name(cog_client: botoclient, pool_id: str, name: 
 
 def list_bucket(s3_client: botoclient, bucket_name: str, suffix: str = "") -> list[str]:
     """
-    Returns a list of object keys found in this bucket
+    Returns a list of object keys found in this bucket. Paginates through all results.
     :param s3_client: a boto3 client for S3
-    :param bucket_name: the name fo the bucket to list
+    :param bucket_name: the name of the bucket to list
     :param suffix: only keys ending with this suffix will be returned. Default empty = all keys are returned.
     :return: a list of object keys
     """
-
-    response = s3_client.list_objects_v2(Bucket=bucket_name)
     keys = []
-    for obj in response['Contents']:
-        if obj['Key'].endswith(suffix):
-            keys.append(obj['Key'])
+    paginator = s3_client.get_paginator('list_objects_v2')
+    for page in paginator.paginate(Bucket=bucket_name):
+        for obj in page.get('Contents', []):
+            if obj['Key'].endswith(suffix):
+                keys.append(obj['Key'])
     return keys

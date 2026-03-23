@@ -54,7 +54,9 @@ API_RESOURCE_REQUEST_STATUS = "/request/status"
 API_RESOURCE_REQUEST_UPDATE = "/request/update"
 API_RESOURCE_REGISTER_THING = "/provision/register-thing"
 API_RESOURCE_GREENGRASS_CONFIG = "/provision/greengrass-config"
-URL_GREENGRASS_NUCLEUS_DL = "https://d2s8p88vqu9w66.cloudfront.net/releases/greengrass-nucleus-latest.zip"
+URL_GREENGRASS_NUCLEUS_DL = os.environ.get(
+    "GG_NUCLEUS_URL", "https://d2s8p88vqu9w66.cloudfront.net/releases/greengrass-nucleus-latest.zip"
+)
 GG_ZIP_DEST_DIR = "/tmp"
 GG_ZIP_DEST_FILE = "greengrass-nucleus.zip"
 GG_UNZIP_DEST_DIR = "/tmp/GreengrassInstaller"
@@ -154,7 +156,7 @@ def get_java_version() -> int:
     """
     try:
         java_ver = subprocess.check_output(['java', '-version'], stderr=subprocess.STDOUT)
-        match = re.search('(\d+\.\d+).*', str(java_ver))
+        match = re.search(r'(\d+\.\d+).*', str(java_ver))
         if match:
             major, minor = match.group(0).strip('"').split(".")[:2]
             return int(minor) if int(major) == 1 else int(major)
@@ -172,7 +174,7 @@ def get_glibc_version() -> typing.Tuple[int, int]:
     """
     try:
         glibc_ver = subprocess.check_output(['ldd', '--version'], stderr=subprocess.STDOUT)
-        match = re.search('(\d+\.\d+)', str(glibc_ver))
+        match = re.search(r'(\d+\.\d+)', str(glibc_ver))
         if match:
             major, minor = match.group(0).strip('"').split(".")[:2]
             return int(major), int(minor)
@@ -194,7 +196,7 @@ def check_sudoers(fname="/etc/sudoers") -> bool:
             for line in f.readlines():
                 line = line.replace("\t", " ")
                 line = line.rstrip("\n")
-                stripped_line = re.sub("\s\s+", " ", line).strip(" ")
+                stripped_line = re.sub(r"\s\s+", " ", line).strip(" ")
                 if "root ALL=(ALL) ALL" in stripped_line or "root ALL=(ALL:ALL) ALL" in stripped_line:
                     return True
         return False
@@ -672,7 +674,7 @@ def get_greengrass_version() -> str:
     try:
         ggi_bin = "{}/lib/Greengrass.jar".format(GG_UNZIP_DEST_DIR)
         gg_ver = subprocess.check_output(['java', '-jar', ggi_bin, '--version'], stderr=subprocess.STDOUT)
-        match = re.search('(\d+\.\d+.\d+)', str(gg_ver))
+        match = re.search(r'(\d+\.\d+.\d+)', str(gg_ver))
         if match:
             return match[0]
         else:
