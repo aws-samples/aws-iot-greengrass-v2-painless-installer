@@ -27,10 +27,11 @@ class DynamodbSetup(Construct):
             self, "ggProvisioningTacking",
             partition_key=dyndb.Attribute(name="deviceId", type=dyndb.AttributeType.STRING),
             sort_key=dyndb.Attribute(name="transactionId", type=dyndb.AttributeType.STRING),
-            billing_mode=dyndb.BillingMode.PAY_PER_REQUEST)
+            billing_mode=dyndb.BillingMode.PAY_PER_REQUEST,
+            point_in_time_recovery=True)
         NagSuppressions.add_resource_suppressions(self._ddb_table,
                                                   [{'id': "AwsSolutions-DDB3",
-                                                    'reason': "Not necessary for this table",
+                                                    'reason': "PITR is now enabled",
                                                     }
                                                    ])
 

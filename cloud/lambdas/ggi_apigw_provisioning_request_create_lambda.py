@@ -41,7 +41,7 @@ import boto3
 import os
 import json
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import urlencode, quote
 
 # Cognito Configuration
@@ -153,7 +153,7 @@ def ok_200(transaction_id: str) -> dict:
     """
     return {
         'statusCode': 200,
-        'headers': {'Content-Type': "application.json"},
+        'headers': {'Content-Type': "application/json"},
         'body': json.dumps({'transactionId': transaction_id})
     }
 
@@ -167,7 +167,7 @@ def bad_request(msg: str, status_code: int = 403) -> dict:
     """
     return {
         'statusCode': status_code,
-        'headers': {'Content-Type': "application.json"},
+        'headers': {'Content-Type': "application/json"},
         'body': json.dumps({'reason': msg})
     }
 
@@ -181,7 +181,7 @@ def internal_error(status_code: int = 500) -> dict:
     msg = "Something unexpected happened. Try again and contact support if the problem persists."
     return {
         'statusCode': status_code,
-        'headers': {'Content-Type': "application.json"},
+        'headers': {'Content-Type': "application/json"},
         'body': json.dumps({'reason': msg})
     }
 
@@ -243,7 +243,7 @@ def new_xaction_record(thing_name: str, device_id: str, username: str, email: st
     :param email: email address of the user
     :return: the populated dictionary
     """
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     return {
         'transactionId': str(uuid4()),
         'deviceId': device_id,

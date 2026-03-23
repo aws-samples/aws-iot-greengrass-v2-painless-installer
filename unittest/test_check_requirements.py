@@ -1,7 +1,11 @@
+import os
 import unittest
 from unittest.mock import patch
 
 from edge import install_gg
+
+# Resolve test fixture paths relative to this file
+FIXTURES_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def mock_check_output_oracle_7(args, stderr):
@@ -42,15 +46,15 @@ check_sudoers_copy = install_gg.check_sudoers
 
 
 def sudoers_good1():
-    return check_sudoers_copy(fname="./sudoers.good1")
+    return check_sudoers_copy(fname=os.path.join(FIXTURES_DIR, "sudoers.good1"))
 
 
 def sudoers_good2():
-    return check_sudoers_copy(fname="./sudoers.good2")
+    return check_sudoers_copy(fname=os.path.join(FIXTURES_DIR, "sudoers.good2"))
 
 
 def sudoers_bad1():
-    return check_sudoers_copy(fname="./sudoers.bad1")
+    return check_sudoers_copy(fname=os.path.join(FIXTURES_DIR, "sudoers.bad1"))
 
 
 class TestCase(unittest.TestCase):
@@ -65,9 +69,9 @@ class TestCase(unittest.TestCase):
         psudoers.side_effect = sudoers_bad1
         results = install_gg.check_requirements()
         expect = {'ps': True, 'sudo': True, 'sh': True, 'kill': True, 'cp': True, 'chmod': True, 'rm': True,
-                  'ln': True, 'echo': True, 'exit': False, 'id': True, 'uname': True, 'grep': True,
-                  'systemctl': False, 'useradd': False, 'groupadd': False, 'usermod': False, 'java': False,
-                  'glibc': False, 'root': False, 'sudoers': False, 'tmp directory': True}
+                  'ln': True, 'echo': True, 'id': True, 'uname': True, 'grep': True,
+                  'systemctl': False, 'useradd': False, 'groupadd': False, 'usermod': False, 'openssl': True,
+                  'java': False, 'glibc': False, 'root': False, 'sudoers': False, 'tmp directory': True}
         self.assertDictEqual(expect, results)
 
     @patch("edge.install_gg.check_sudoers")
@@ -80,18 +84,18 @@ class TestCase(unittest.TestCase):
         psudoers.side_effect = sudoers_good1
         results = install_gg.check_requirements()
         expect = {'ps': True, 'sudo': True, 'sh': True, 'kill': True, 'cp': True, 'chmod': True, 'rm': True,
-                  'ln': True, 'echo': True, 'exit': False, 'id': True, 'uname': True, 'grep': True,
-                  'systemctl': False, 'useradd': False, 'groupadd': False, 'usermod': False, 'java': True,
-                  'glibc': True, 'root': True, 'sudoers': True, 'tmp directory': True}
+                  'ln': True, 'echo': True, 'id': True, 'uname': True, 'grep': True,
+                  'systemctl': False, 'useradd': False, 'groupadd': False, 'usermod': False, 'openssl': True,
+                  'java': True, 'glibc': True, 'root': True, 'sudoers': True, 'tmp directory': True}
         self.assertDictEqual(expect, results)
         psudoers.side_effect = sudoers_good2
         results = install_gg.check_requirements()
         self.assertDictEqual(expect, results)
 
     def test03(self):
-        self.assertFalse(install_gg.check_sudoers("./sudoers.bad1"))
-        self.assertTrue(install_gg.check_sudoers("./sudoers.good1"))
-        self.assertTrue(install_gg.check_sudoers("./sudoers.good2"))
+        self.assertFalse(install_gg.check_sudoers(os.path.join(FIXTURES_DIR, "sudoers.bad1")))
+        self.assertTrue(install_gg.check_sudoers(os.path.join(FIXTURES_DIR, "sudoers.good1")))
+        self.assertTrue(install_gg.check_sudoers(os.path.join(FIXTURES_DIR, "sudoers.good2")))
 
 
 if __name__ == "__main__":

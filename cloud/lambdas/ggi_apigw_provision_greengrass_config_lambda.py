@@ -72,7 +72,7 @@ def bad_request(msg: str, status_code: int = 403) -> dict:
     """
     return {
         'statusCode': status_code,
-        'headers': {'Content-Type': "application.json"},
+        'headers': {'Content-Type': "application/json"},
         'body': json.dumps({'reason': msg})
     }
 
@@ -86,7 +86,7 @@ def internal_error(status_code: int = 500) -> dict:
     msg = "Something unexpected happened. Try again and contact support if the problem persists."
     return {
         'statusCode': status_code,
-        'headers': {'Content-Type': "application.json"},
+        'headers': {'Content-Type': "application/json"},
         'body': json.dumps({'reason': msg})
     }
 

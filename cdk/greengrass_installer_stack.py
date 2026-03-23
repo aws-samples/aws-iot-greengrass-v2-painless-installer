@@ -66,8 +66,8 @@ class GreengrassInstallerStack(Stack):
         aws_scope = ScopedAws(self)
 
         # Set a few constants to simplify code updates
-        LAMBDA_ARCH = _lambda.Architecture.X86_64
-        LAMBDA_RUNTIME = _lambda.Runtime.PYTHON_3_9
+        LAMBDA_ARCH = _lambda.Architecture.ARM_64
+        LAMBDA_RUNTIME = _lambda.Runtime.PYTHON_3_12
 
         # Define the common Layer for all the Lambda
         lambda_common_layer = _lambda.LayerVersion(
@@ -121,7 +121,9 @@ class GreengrassInstallerStack(Stack):
                                                                                require_uppercase=True,
                                                                                require_symbols=True)
                                         )
-        cognito_pool.node.default_child.UserPoolAddOnsProperty(advanced_security_mode="ENFORCED")
+        cognito_pool.node.default_child.add_property_override(
+            "UserPoolAddOns", {"AdvancedSecurityMode": "ENFORCED"}
+        )
         NagSuppressions.add_resource_suppressions(cognito_pool,
                                                   [
                                                       {
@@ -154,8 +156,10 @@ class GreengrassInstallerStack(Stack):
             self, "GGIApi",
             rest_api_name="ggprovisioning",
             default_cors_preflight_options=apigw.CorsOptions(
-                allow_origins=apigw.Cors.ALL_ORIGINS,
-                allow_methods=apigw.Cors.ALL_METHODS
+                allow_origins=["https://{}.auth.{}.amazoncognito.com".format(
+                    os.environ["COGNITO_DOMAIN_PREFIX"],
+                    Stack.of(self).region)],
+                allow_methods=["GET", "POST", "OPTIONS"]
             ),
             # default_method_options=default_method_options,
             deploy=True,

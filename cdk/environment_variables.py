@@ -10,35 +10,19 @@
 # CONDITIONS OF ANY KIND, either express or implied. See the License for the
 # specific language governing permissions and limitations under the License.
 
-# Define here all the environment variables that cannot be automatically
-# determined by CDK
 import os
+from dataclasses import dataclass, field
 
 
-class _EnvVar(object):
-
-    def __init__(self, name, value):
-        self._name = name
-        self._value = value
-
-    @property
-    def name(self):
-        return self._name
-
-    @property
-    def value(self):
-        return self._value
-
-    @value.setter
-    def value(self, value):
-        self._value = value
+@dataclass
+class _EnvVar:
+    name: str
+    value: str = ""
 
 
-class RuntimeEnvVars(object):
-    """
-    Host here the environment variables that should be set at runtime
-    for instance for Lambda functions
-    """
+class RuntimeEnvVars:
+    """Host here the environment variables that should be set at runtime (e.g. for Lambda functions)."""
+
     def __init__(self):
         # General
         self.log_level = _EnvVar('LOG_LEVEL', 'DEBUG')
@@ -50,12 +34,10 @@ class RuntimeEnvVars(object):
         self.cognito_pool_operator_client_name = _EnvVar('COGNITO_CLIENT_NAME', '')
         self.cognito_pool_gginstaller_client_id = _EnvVar('COGNITO_CLIENT_ID', '')
         self.cognito_group_provisioning = _EnvVar('COGNITO_PROV_GROUP', '')
-        # API Gateway
-
         # S3
         self.s3_bucket_provisioning_templates = _EnvVar('S3_BUCKET_THING_TEMPLATES', '')
         self.thing_provisioning_template_name = _EnvVar('DEFAULT_THING_PROVISIONING_TEMPLATE',
-                                                  'ggi_default-iot-provisioning-template.json')
+                                                        'ggi_default-iot-provisioning-template.json')
         self.s3_bucket_greengrass_config = _EnvVar('S3_BUCKET_GG_CONFIGS', '')
         self.greengrass_config_template_name = _EnvVar('DEFAULT_GREENGRASS_CONFIG_FILE',
                                                        'ggi_default_greengrass-config-template.yaml')
@@ -75,11 +57,7 @@ class RuntimeEnvVars(object):
         self.token_exchange_role_alias_policy_name = _EnvVar('TOKEN_EXCHANGE_ROLE_ALIAS_POLICY_NAME', '')
 
     def __str__(self):
-        vl = []
-        for k, v in vars(self).items():
-            if isinstance(v, _EnvVar):
-                vl.append("{} = {}: {}".format(k, v.name, v.value))
-        return str(vl)
+        return str([f"{k} = {v.name}: {v.value}" for k, v in vars(self).items() if isinstance(v, _EnvVar)])
 
 
 # Below is a list of Environment Variables that must be set prior to deploying the CDK.
@@ -88,12 +66,6 @@ _deploy_env_vars = ('SES_VERIFIED_EMAIL', 'COGNITO_DOMAIN_PREFIX')
 
 def check_deploy_env_vars(env_vars: tuple = _deploy_env_vars) -> None:
     print("Checking presence of required Environment Variables")
-    missing = []
-    for env_var in env_vars:
-        try:
-            os.environ[env_var]
-        except KeyError:
-            missing.append(env_var)
+    missing = [v for v in env_vars if v not in os.environ]
     if missing:
-        raise RuntimeError("Deployment aborted. You need to declare the following Environment Variables: \n"
-                           "{}".format(missing))
+        raise RuntimeError(f"Deployment aborted. You need to declare the following Environment Variables: \n{missing}")

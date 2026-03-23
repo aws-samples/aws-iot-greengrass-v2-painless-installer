@@ -31,6 +31,7 @@ class S3Setup(Construct):
                                        encryption=s3.BucketEncryption.S3_MANAGED,
                                        block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
                                        enforce_ssl=True,
+                                       object_ownership=s3.ObjectOwnership.BUCKET_OWNER_PREFERRED,
                                        )
 
         NagSuppressions.add_resource_suppressions(access_logs_bucket, [
@@ -45,7 +46,7 @@ class S3Setup(Construct):
         # Bucket used for storing the customised installation scripts the User will run on the device
         self._downloads_bucket = s3.Bucket(self, "DownloadsBucket",
                                            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
-                                           encryption=s3.BucketEncryption.S3_MANAGED,
+                                           encryption=s3.BucketEncryption.KMS_MANAGED,
                                            enforce_ssl=True,
                                            versioned=False,
                                            removal_policy=RemovalPolicy.RETAIN,
@@ -57,7 +58,7 @@ class S3Setup(Construct):
         # Bucket hosting the installation script template(s)
         self._scripts_bucket = s3.Bucket(self, "ScriptsBucket",
                                          block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
-                                         encryption=s3.BucketEncryption.S3_MANAGED,
+                                         encryption=s3.BucketEncryption.KMS_MANAGED,
                                          enforce_ssl=True,
                                          versioned=True,
                                          removal_policy=RemovalPolicy.RETAIN,
@@ -77,7 +78,7 @@ class S3Setup(Construct):
         # Bucket used to host the greengrass configuration templates
         self._gg_config_bucket = s3.Bucket(self, "GreengrassConfigBucket",
                                            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
-                                           encryption=s3.BucketEncryption.S3_MANAGED,
+                                           encryption=s3.BucketEncryption.KMS_MANAGED,
                                            enforce_ssl=True,
                                            versioned=True,
                                            removal_policy=RemovalPolicy.RETAIN,
@@ -95,7 +96,7 @@ class S3Setup(Construct):
         # Bucket used to host the IoT Provisioning Templates
         self._prov_templates_bucket = s3.Bucket(self, "provTemplatesBucket",
                                                 block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
-                                                encryption=s3.BucketEncryption.S3_MANAGED,
+                                                encryption=s3.BucketEncryption.KMS_MANAGED,
                                                 enforce_ssl=True,
                                                 versioned=True,
                                                 removal_policy=RemovalPolicy.RETAIN,
@@ -113,7 +114,7 @@ class S3Setup(Construct):
         # The Greengrass artifacts bucket is added to allow Greengrass Role to get objects in the Policy.
         self._greengrass_artifacts_bucket = s3.Bucket(self, "greengrassArtifactsBucket",
                                                       block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
-                                                      encryption=s3.BucketEncryption.S3_MANAGED,
+                                                      encryption=s3.BucketEncryption.KMS_MANAGED,
                                                       enforce_ssl=True,
                                                       versioned=False,
                                                       removal_policy=RemovalPolicy.RETAIN,

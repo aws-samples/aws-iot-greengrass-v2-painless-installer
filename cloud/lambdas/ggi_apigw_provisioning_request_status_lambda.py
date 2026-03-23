@@ -39,7 +39,7 @@ def ok_200(status: str) -> dict:
     """
     return {
         'statusCode': 200,
-        'headers': {'Content-Type': "application.json"},
+        'headers': {'Content-Type': "application/json"},
         'body': json.dumps({'status': status})
     }
 
@@ -53,7 +53,7 @@ def bad_request(msg, status_code: int = 400) -> dict:
     """
     return {
         'statusCode': status_code,
-        'headers': {'Content-Type': "application.json"},
+        'headers': {'Content-Type': "application/json"},
         'body': json.dumps({'reason': msg})
     }
 
@@ -67,7 +67,7 @@ def internal_error(status_code: int = 500) -> dict:
     msg = "Something unexpected happened. Try again and contact support if the problem persists."
     return {
         'statusCode': status_code,
-        'headers': {'Content-Type': "application.json"},
+        'headers': {'Content-Type': "application/json"},
         'body': json.dumps({'reason': msg})
     }
 

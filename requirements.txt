@@ -1,14 +1,13 @@
-# The following must match the versions available in the Lambda Runtime for python 3.9
-boto3 == 1.20.32
-botocore == 1.23.32
+# Lambda runtime uses its own boto3 — these are for local dev/testing only
+boto3>=1.35.0
+botocore>=1.35.0
 
 # For development purpose only - not for prod
-pipdeptree==2.3.3
-dep-license
-pip-licenses==4.0.3
+pipdeptree>=2.23.0
+pip-licenses>=5.0.0
 
 # AWS CDK
-aws-cdk-lib==2.54.0
-constructs==10.1.189
-pytest==7.2.0
-cdk-nag==2.21.31
+aws-cdk-lib>=2.170.0
+constructs>=10.3.0
+pytest>=8.3.0
+cdk-nag>=2.28.0
